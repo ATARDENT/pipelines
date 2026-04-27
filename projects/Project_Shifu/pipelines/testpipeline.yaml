@@ -67,4 +67,4 @@ pipeline:
             type: Docker
             spec: {}
         delegateSelectors:
-          - theanhdelegate
+          - macos-arm64
