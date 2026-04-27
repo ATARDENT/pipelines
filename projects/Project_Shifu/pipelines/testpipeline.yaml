@@ -1,0 +1,64 @@
+pipeline:
+  name: Random Test Pipeline
+  identifier: random_test_pipeline
+  projectIdentifier: Project_Shifu
+  orgIdentifier: default
+  stages:
+    - stage:
+        name: Test Stage
+        identifier: test_stage
+        type: CI
+        spec:
+          execution:
+            steps:
+              - step:
+                  name: Print Random Numbers 1
+                  identifier: random_print_1
+                  type: Run
+                  spec:
+                    shell: Bash
+                    command: |
+                      echo "Generating random numbers..."
+                      for i in {1..5}; do
+                        echo "Random number $i: $RANDOM"
+                        sleep 1
+                      done
+              - step:
+                  name: Sleep Random Duration 1
+                  identifier: random_sleep_1
+                  type: Run
+                  spec:
+                    shell: Bash
+                    command: |
+                      SLEEP_TIME=$(( (RANDOM % 10) + 1 ))
+                      echo "Sleeping for $SLEEP_TIME seconds..."
+                      sleep $SLEEP_TIME
+              - step:
+                  name: Print Random Numbers 2
+                  identifier: random_print_2
+                  type: Run
+                  spec:
+                    shell: Bash
+                    command: |
+                      echo "Generating more random numbers..."
+                      for i in {1..3}; do
+                        echo "Random number $i: $RANDOM"
+                        sleep 2
+                      done
+              - step:
+                  name: Sleep Random Duration 2
+                  identifier: random_sleep_2
+                  type: Run
+                  spec:
+                    shell: Bash
+                    command: |
+                      SLEEP_TIME=$(( (RANDOM % 15) + 5 ))
+                      echo "Sleeping for $SLEEP_TIME seconds..."
+                      sleep $SLEEP_TIME
+          platform:
+            os: MacOS
+            arch: Arm64
+          runtime:
+            type: Docker
+            spec:
+              harnessImageConnectorRef: account.harnessImage
