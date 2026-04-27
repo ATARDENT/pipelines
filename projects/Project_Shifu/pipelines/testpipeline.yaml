@@ -61,5 +61,7 @@ pipeline:
             arch: Arm64
           runtime:
             type: Docker
-            spec:
-              harnessImageConnectorRef: account.harnessImage
+            spec: {}
+        delegateSelectors:
+          - macos-arm64
+          - theanhdelegate
