@@ -9,6 +9,7 @@ pipeline:
         identifier: test_stage
         type: CI
         spec:
+          cloneCodebase: false
           execution:
             steps:
               - step:
