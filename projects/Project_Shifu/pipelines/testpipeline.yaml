@@ -21,7 +21,7 @@ pipeline:
                     shell: Bash
                     command: |
                       echo "Generating random numbers..."
-                      for i in {1..5}; do
+                      for i in {1..100}; do
                         echo "Random number $i: $RANDOM"
                         sleep 1
                       done
@@ -33,7 +33,7 @@ pipeline:
                     onDelegate: true
                     shell: Bash
                     command: |
-                      SLEEP_TIME=$(( (RANDOM % 10) + 1 ))
+                      SLEEP_TIME=$(( (RANDOM % 120) + 1 ))
                       echo "Sleeping for $SLEEP_TIME seconds..."
                       sleep $SLEEP_TIME
               - step:
@@ -45,7 +45,7 @@ pipeline:
                     shell: Bash
                     command: |
                       echo "Generating more random numbers..."
-                      for i in {1..3}; do
+                      for i in {1..100}; do
                         echo "Random number $i: $RANDOM"
                         sleep 2
                       done
@@ -57,7 +57,7 @@ pipeline:
                     onDelegate: true
                     shell: Bash
                     command: |
-                      SLEEP_TIME=$(( (RANDOM % 15) + 5 ))
+                      SLEEP_TIME=$(( (RANDOM % 120) + 5 ))
                       echo "Sleeping for $SLEEP_TIME seconds..."
                       sleep $SLEEP_TIME
           platform:
