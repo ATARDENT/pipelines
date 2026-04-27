@@ -17,6 +17,7 @@ pipeline:
                   identifier: random_print_1
                   type: Run
                   spec:
+                    onDelegate: true
                     shell: Bash
                     command: |
                       echo "Generating random numbers..."
@@ -29,6 +30,7 @@ pipeline:
                   identifier: random_sleep_1
                   type: Run
                   spec:
+                    onDelegate: true
                     shell: Bash
                     command: |
                       SLEEP_TIME=$(( (RANDOM % 10) + 1 ))
@@ -39,6 +41,7 @@ pipeline:
                   identifier: random_print_2
                   type: Run
                   spec:
+                    onDelegate: true
                     shell: Bash
                     command: |
                       echo "Generating more random numbers..."
@@ -51,6 +54,7 @@ pipeline:
                   identifier: random_sleep_2
                   type: Run
                   spec:
+                    onDelegate: true
                     shell: Bash
                     command: |
                       SLEEP_TIME=$(( (RANDOM % 15) + 5 ))
@@ -63,5 +67,4 @@ pipeline:
             type: Docker
             spec: {}
         delegateSelectors:
-          - macos-arm64
           - theanhdelegate
