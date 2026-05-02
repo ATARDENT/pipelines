@@ -61,10 +61,10 @@ pipeline:
                       echo "Sleeping for $SLEEP_TIME seconds..."
                       sleep $SLEEP_TIME
           platform:
-            os: Windows
+            os: Linux
             arch: Amd64
           runtime:
             type: Docker
             spec: {}
         delegateSelectors:
-          - windows-amd64
+          - linux-amd64
