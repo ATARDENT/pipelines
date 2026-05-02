@@ -67,4 +67,4 @@ pipeline:
             type: Docker
             spec: {}
         delegateSelectors:
-          - macos-arm64
+          - windows-amd64
