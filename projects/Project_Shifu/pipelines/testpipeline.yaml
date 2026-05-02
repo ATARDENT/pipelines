@@ -61,8 +61,8 @@ pipeline:
                       echo "Sleeping for $SLEEP_TIME seconds..."
                       sleep $SLEEP_TIME
           platform:
-            os: MacOS
-            arch: Arm64
+            os: Windows
+            arch: Amd64
           runtime:
             type: Docker
             spec: {}
