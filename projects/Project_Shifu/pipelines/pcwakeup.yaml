@@ -1,5 +1,5 @@
 pipeline:
-  name: PC Wakeup
+  name: pc-wakeup
   identifier: pcwakeup
   projectIdentifier: Project_Shifu
   orgIdentifier: default
@@ -13,13 +13,19 @@ pipeline:
       value: nhat-hung-pc-1
   stages:
     - stage:
-        name: Pre-Check
-        identifier: precheck_stage
+        name: Wake PC via Phone
+        identifier: wol_stage
         type: CI
         variables:
           - name: TS_AUTHKEY
             type: Secret
             value: TAILSCALE_AUTH_KEY
+        failureStrategies:
+          - onFailure:
+              errors:
+                - AllErrors
+              action:
+                type: Abort
         spec:
           cloneCodebase: false
           platform:
@@ -86,63 +92,12 @@ pipeline:
                               echo "😴 [PRECHECK] [PC-MAIN] is deep in dreamland. Time to ring the doorbell!"
                               echo "already_awake=false" >> $HARNESS_OUTPUT_FILE
                             fi
-    - stage:
-        name: Wake-on-LAN
-        identifier: wol_stage
-        type: CI
-        variables:
-          - name: TS_AUTHKEY
-            type: Secret
-            value: TAILSCALE_AUTH_KEY
-        when:
-          pipelineStatus: Success
-          condition: <+pipeline.stages.precheck_stage.spec.execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_awake> == "false"
-        spec:
-          cloneCodebase: false
-          platform:
-            os: Linux
-            arch: Arm64
-          runtime:
-            type: Cloud
-            spec: {}
-          execution:
-            steps:
-              - stepGroup:
-                  name: Install Dependencies
-                  identifier: install_group
-                  steps:
-                    - step:
-                        type: Run
-                        name: Install Tailscale and Tools
-                        identifier: install_tools
-                        spec:
-                          shell: Bash
-                          command: |
-                            echo "🛠️  [INSTALL] New VM, who dis? Installing our gear again..."
-                            sudo apt-get update -y -qq
-                            sudo apt-get install -y -qq wakeonlan
-                            curl -fsSL https://tailscale.com/install.sh | sudo sh
-                            echo "✅ [INSTALL] Locked and loaded."
-              - stepGroup:
-                  name: Setup Tailscale
-                  identifier: tailscale_group
-                  steps:
-                    - step:
-                        type: Run
-                        name: Authenticate Tailscale
-                        identifier: tailscale_auth
-                        spec:
-                          shell: Bash
-                          command: |
-                            echo "🔐 [TAILSCALE] Bribing the network bouncer..."
-                            sudo tailscaled &
-                            sleep 5
-                            sudo tailscale up --authkey=$TS_AUTHKEY
-                            echo "🌐 [TAILSCALE] VIP access granted:"
-                            tailscale status
               - stepGroup:
                   name: Send Magic Packet
                   identifier: wol_group
+                  when:
+                    stageStatus: Success
+                    condition: <+execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_awake> == "false"
                   steps:
                     - step:
                         type: Run
@@ -161,63 +116,12 @@ pipeline:
                               'echo "[PHONE] Casting the magic spell... 🪄" && wol A8:A1:59:D7:40:FD'
 
                             echo "✅ [WOL] Magic packet YEETED across the network. Fingers crossed! 🤞"
-    - stage:
-        name: Verify
-        identifier: verify_stage
-        type: CI
-        variables:
-          - name: TS_AUTHKEY
-            type: Secret
-            value: TAILSCALE_AUTH_KEY
-        when:
-          pipelineStatus: Success
-          condition: <+pipeline.stages.precheck_stage.spec.execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_awake> == "false"
-        spec:
-          cloneCodebase: false
-          platform:
-            os: Linux
-            arch: Arm64
-          runtime:
-            type: Cloud
-            spec: {}
-          execution:
-            steps:
-              - stepGroup:
-                  name: Install Dependencies
-                  identifier: install_group
-                  steps:
-                    - step:
-                        type: Run
-                        name: Install Tailscale and Tools
-                        identifier: install_tools
-                        spec:
-                          shell: Bash
-                          command: |
-                            echo "🛠️  [INSTALL] Third VM of the day. We meet again, apt-get."
-                            sudo apt-get update -y -qq
-                            sudo apt-get install -y -qq wakeonlan
-                            curl -fsSL https://tailscale.com/install.sh | sudo sh
-                            echo "✅ [INSTALL] Done. Let's wrap this up."
-              - stepGroup:
-                  name: Setup Tailscale
-                  identifier: tailscale_group
-                  steps:
-                    - step:
-                        type: Run
-                        name: Authenticate Tailscale
-                        identifier: tailscale_auth
-                        spec:
-                          shell: Bash
-                          command: |
-                            echo "🔐 [TAILSCALE] One last time, I promise..."
-                            sudo tailscaled &
-                            sleep 5
-                            sudo tailscale up --authkey=$TS_AUTHKEY
-                            echo "🌐 [TAILSCALE] Connected. Let's go check on the patients."
-                            tailscale status
               - stepGroup:
                   name: Verify PCs Online
                   identifier: verify_group
+                  when:
+                    stageStatus: Success
+                    condition: <+execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_awake> == "false"
                   steps:
                     - step:
                         type: Run
@@ -240,7 +144,7 @@ pipeline:
                               echo "😶 [VERIFY] Nothing yet. $([ $i -lt 2 ] && echo 'Trying again...' || echo 'That is all the patience we have.')"
                             done
 
-                            echo "💀 [VERIFY] [PC-MAIN] refused to wake up after 2 minutes. Stage failed."
+                            echo "💀 [VERIFY] [PC-MAIN] refused to wake up after 2 minutes. Giving up."
                             exit 1
                     - step:
                         type: Run
@@ -249,7 +153,7 @@ pipeline:
                         spec:
                           shell: Bash
                           command: |
-                            echo "🏥 [VERIFY] [PC-MAIN] is up, now checking on its sibling [PC-BACKUP]..."
+                            echo "🏥 [VERIFY] [PC-MAIN] is up! Now checking on its sibling [PC-BACKUP]..."
 
                             if tailscale ping -c 1 $PC_BACKUP >/dev/null 2>&1; then
                               echo "🎉 [VERIFY] [PC-BACKUP] was already up! Overachiever."
