@@ -116,14 +116,19 @@ pipeline:
                             echo "🗡️  [SHUTDOWN] Sneaking in through the Tailscale tunnel..."
                             echo "🎯 [SHUTDOWN] Target: [PC-TARGET]. Mission: total annihilation (of its uptime)."
 
-                            # Pre-accept the host key so tailscale ssh stops whining
-                            # Scan both short name and full MagicDNS hostname
-                            ssh-keyscan -H $PC_TARGET >> ~/.ssh/known_hosts 2>/dev/null
-                            ssh-keyscan -H $PC_TARGET.tail8f3b9f.ts.net >> ~/.ssh/known_hosts 2>/dev/null
+                            # Configure SSH to skip strict checking for all Tailscale hostnames
+                            # tailscale ssh uses system ssh under the hood, so this takes effect
+                            mkdir -p ~/.ssh
+                            cat >> ~/.ssh/config << 'EOF'
+                            Host *.ts.net
+                              StrictHostKeyChecking no
+                              UserKnownHostsFile /dev/null
 
-                            # Verify it actually got written
-                            echo "🔍 [SHUTDOWN] Known hosts entries:"
-                            cat ~/.ssh/known_hosts
+                            Host nhat-hung-pc-1
+                              StrictHostKeyChecking no
+                              UserKnownHostsFile /dev/null
+                            EOF
+                            chmod 600 ~/.ssh/config
 
                             tailscale ssh $PC_TARGET '/mnt/c/Windows/System32/shutdown.exe /s /t 0'
 
