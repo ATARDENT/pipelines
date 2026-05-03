@@ -167,3 +167,4 @@ pipeline:
 
                             echo "❌ nhat-hung-pc-1 failed to wake after 2 minutes"
                             exit 1
+        description: ""
