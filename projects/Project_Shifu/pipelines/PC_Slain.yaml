@@ -116,7 +116,11 @@ pipeline:
                             echo "🗡️  [SHUTDOWN] Sneaking in through the Tailscale tunnel..."
                             echo "🎯 [SHUTDOWN] Target: [PC-TARGET]. Mission: total annihilation (of its uptime)."
 
-                            tailscale ssh $PC_TARGET '/mnt/c/Windows/System32/shutdown.exe /s /t 0'
+                            ssh \
+                            -o StrictHostKeyChecking=no \
+                            -o UserKnownHostsFile=/dev/null \
+                            $PC_TARGET \
+                            '/mnt/c/Windows/System32/shutdown.exe /s /t 0'
 
                             echo "🔪 [SHUTDOWN] The command has been delivered. [PC-TARGET]'s days are numbered. (Specifically: 0)"
               - stepGroup:
