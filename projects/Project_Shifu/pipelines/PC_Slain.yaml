@@ -1,5 +1,5 @@
 pipeline:
-  name: PC Slain
+  name: PC Slay
   identifier: pcslain
   projectIdentifier: Project_Shifu
   orgIdentifier: default
@@ -117,7 +117,13 @@ pipeline:
                             echo "🎯 [SHUTDOWN] Target: [PC-TARGET]. Mission: total annihilation (of its uptime)."
 
                             # Pre-accept the host key so tailscale ssh stops whining
+                            # Scan both short name and full MagicDNS hostname
                             ssh-keyscan -H $PC_TARGET >> ~/.ssh/known_hosts 2>/dev/null
+                            ssh-keyscan -H $PC_TARGET.tail8f3b9f.ts.net >> ~/.ssh/known_hosts 2>/dev/null
+
+                            # Verify it actually got written
+                            echo "🔍 [SHUTDOWN] Known hosts entries:"
+                            cat ~/.ssh/known_hosts
 
                             tailscale ssh $PC_TARGET '/mnt/c/Windows/System32/shutdown.exe /s /t 0'
 
