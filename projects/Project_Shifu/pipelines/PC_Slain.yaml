@@ -77,7 +77,7 @@ pipeline:
                             tailscale status
 
                             echo "🔥 [TAILSCALE] Pre-warming peer path to [PC-TARGET]..."
-                            tailscale ping --timeout=10s $PC_TARGET >/dev/null 2>&1 || true
+                            timeout 20s tailscale ping --timeout=15s $PC_TARGET >/dev/null 2>&1 || true
                             echo "✅ [TAILSCALE] Target acquired."
               - stepGroup:
                   name: Pre-Check
@@ -92,7 +92,7 @@ pipeline:
                           command: |
                             echo "🕵️  [PRECHECK] Locating [PC-TARGET]... is it already sleeping with the fishes?"
 
-                            if ! tailscale ping --timeout=15s $PC_TARGET >/dev/null 2>&1; then
+                            if ! timeout 20s tailscale ping --timeout=15s $PC_TARGET >/dev/null 2>&1; then
                               echo "💀 [PRECHECK] [PC-TARGET] is already offline. Our work here is done before it even started. Suspiciously efficient."
                               echo "already_offline=true" >> $HARNESS_OUTPUT_FILE
                             else
@@ -108,7 +108,7 @@ pipeline:
                   steps:
                     - step:
                         type: Run
-                        name: Tailscale SSH and shutdown
+                        name: SSH and graceful shutdown
                         identifier: shutdown_trigger
                         spec:
                           shell: Bash
@@ -116,12 +116,12 @@ pipeline:
                             echo "🗡️  [SHUTDOWN] Sneaking in through the Tailscale tunnel..."
                             echo "🎯 [SHUTDOWN] Target: [PC-TARGET]. Mission: total annihilation (of its uptime)."
 
-                            # Write PEM key to disk — reusing the same key as the phone
-                            echo '<+secrets.getValue("ardent-phone")>' > /tmp/pc_key.pem
+                            # Write PEM key to disk
+                            echo '<+secrets.getValue("phone_ssh_pem")>' > /tmp/pc_key.pem
                             chmod 600 /tmp/pc_key.pem
 
                             if [ ! -s /tmp/pc_key.pem ]; then
-                              echo "💀 [SHUTDOWN] PEM key is empty or missing! Check secret 'ardent-phone' exists and is in scope."
+                              echo "💀 [SHUTDOWN] PEM key is empty or missing! Check secret 'phone_ssh_pem' exists and is in scope."
                               exit 1
                             fi
 
@@ -130,9 +130,9 @@ pipeline:
                               -o StrictHostKeyChecking=no \
                               -o UserKnownHostsFile=/dev/null \
                               ardent@$PC_TARGET \
-                              '/mnt/c/Windows/System32/shutdown.exe /s /t 0'
+                              '/mnt/c/Windows/System32/shutdown.exe /s /t 50 /f'
 
-                            echo "🔪 [SHUTDOWN] The command has been delivered. [PC-TARGET]'s days are numbered. (Specifically: 0)"
+                            echo "⏳ [SHUTDOWN] Shutdown command delivered. Giving [PC-TARGET] 50 seconds to say its goodbyes..."
               - stepGroup:
                   name: Verify PC is Offline
                   identifier: verify_group
@@ -153,7 +153,7 @@ pipeline:
                               echo "⏳ [VERIFY] Attempt $i/2 — giving [PC-TARGET] 60s to dramatically collapse..."
                               sleep 60
 
-                              if ! tailscale ping --timeout=15s $PC_TARGET >/dev/null 2>&1; then
+                              if ! timeout 20s tailscale ping --timeout=15s $PC_TARGET >/dev/null 2>&1; then
                                 echo "🪦 [VERIFY] [PC-TARGET] has left the chat. Mission accomplished. RIP (Resting in Poweroff)."
                                 exit 0
                               fi
