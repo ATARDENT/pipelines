@@ -154,7 +154,7 @@ pipeline:
                               echo "⏳ [VERIFY] Attempt $i/2 — giving [PC-MAIN] 60s to rub its eyes..."
                               sleep 60
 
-                              if tailscale ping -c 1 $PC_MAIN >/dev/null 2>&1; then
+                              if tailscale ping --timeout=5s $PC_MAIN >/dev/null 2>&1; then
                                 echo "🎉 [VERIFY] [PC-MAIN] is ALIVE! It has risen!"
                                 exit 0
                               fi
@@ -173,7 +173,7 @@ pipeline:
                           command: |
                             echo "🏥 [VERIFY] [PC-MAIN] is up! Now checking on its sibling [PC-BACKUP]..."
 
-                            if tailscale ping -c 1 $PC_BACKUP >/dev/null 2>&1; then
+                            if tailscale ping --timeout=15s $PC_BACKUP >/dev/null 2>&1; then
                               echo "🎉 [VERIFY] [PC-BACKUP] was already up! Overachiever."
                               exit 0
                             fi
