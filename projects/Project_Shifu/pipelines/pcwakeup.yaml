@@ -9,6 +9,11 @@ pipeline:
         name: Wake PC via Phone
         identifier: wol_stage
         type: CI
+        description: ""
+        variables:
+          - name: TS_AUTHKEY
+            type: Secret
+            value: <+secrets.getValue("TAILSCALE_AUTH_KEY")>
         failureStrategies:
           - onFailure:
               errors:
@@ -141,4 +146,3 @@ pipeline:
 
                             echo "❌ nhat-hung-pc-1 failed to wake after 2 minutes"
                             exit 1
-        description: ""
