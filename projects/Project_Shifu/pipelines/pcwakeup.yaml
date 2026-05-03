@@ -109,7 +109,7 @@ pipeline:
                             echo "📱 [WOL] Calling our guy (the phone) to go knock on [PC-MAIN]'s door..."
 
                             ssh \
-                              -i <+secrets.getSSHKeyPath("phone_ssh")> \
+                              -i <+secrets.getSSHKeyPath("phone-ssh")> \
                               -p 8022 \
                               -o StrictHostKeyChecking=no \
                               ardent@trcs-a14 \
