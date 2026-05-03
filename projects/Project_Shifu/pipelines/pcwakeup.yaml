@@ -1,25 +1,25 @@
 pipeline:
-  name: pc-wakeup
+  name: PC Wakeup
   identifier: pcwakeup
   projectIdentifier: Project_Shifu
   orgIdentifier: default
   tags: {}
+  variables:
+    - name: PC_MAIN
+      type: String
+      value: nhat-hung-pc
+    - name: PC_BACKUP
+      type: String
+      value: nhat-hung-pc-1
   stages:
     - stage:
-        name: Wake PC via Phone
-        identifier: wol_stage
+        name: Pre-Check
+        identifier: precheck_stage
         type: CI
-        description: ""
         variables:
           - name: TS_AUTHKEY
             type: Secret
             value: TAILSCALE_AUTH_KEY
-        failureStrategies:
-          - onFailure:
-              errors:
-                - AllErrors
-              action:
-                type: Abort
         spec:
           cloneCodebase: false
           platform:
@@ -27,32 +27,44 @@ pipeline:
             arch: Arm64
           runtime:
             type: Cloud
-            spec:
-              imageSpec:
-                imageName: atardent/pcwakeup:latest
-                connectorRef: dockerhubconnector
+            spec: {}
           execution:
             steps:
               - stepGroup:
-                  name: Setup Environment
-                  identifier: setup_group
+                  name: Install Dependencies
+                  identifier: install_group
                   steps:
                     - step:
                         type: Run
-                        name: Start - Authenticate Tailscale
-                        identifier: tailscale_up
+                        name: Install Tailscale and Tools
+                        identifier: install_tools
                         spec:
                           shell: Bash
                           command: |
-                            echo "=== [SETUP] Starting Tailscale ==="
-
+                            echo "🛠️  [INSTALL] Suiting up... grabbing our tools from the shed"
+                            sudo apt-get update -y -qq
+                            sudo apt-get install -y -qq wakeonlan
+                            curl -fsSL https://tailscale.com/install.sh | sudo sh
+                            echo "✅ [INSTALL] Armed and ready. Tailscale $(tailscale --version | head -1) reporting for duty."
+              - stepGroup:
+                  name: Setup Tailscale
+                  identifier: tailscale_group
+                  steps:
+                    - step:
+                        type: Run
+                        name: Authenticate Tailscale
+                        identifier: tailscale_auth
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🔐 [TAILSCALE] Knocking on Tailscale's door..."
                             sudo tailscaled &
                             sleep 5
 
-                            echo "[SETUP] Authenticating..."
+                            echo "[TAILSCALE] Flashing our badge..."
                             sudo tailscale up --authkey=$TS_AUTHKEY
 
-                            echo "[SETUP] Tailscale status:"
+                            echo "🌐 [TAILSCALE] We're in. Network status:"
                             tailscale status
               - stepGroup:
                   name: Pre-Check
@@ -60,26 +72,77 @@ pipeline:
                   steps:
                     - step:
                         type: Run
-                        name: Check if nhat-hung-pc is already awake
+                        name: Check if PC is already awake
                         identifier: pre_ping
                         spec:
                           shell: Bash
                           command: |
-                            echo "=== [PRECHECK] Pinging nhat-hung-pc ==="
+                            echo "👀 [PRECHECK] Peeking to see if [PC-MAIN] is already up and about..."
 
-                            if tailscale ping -c 1 nhat-hung-pc >/dev/null 2>&1; then
-                              echo "✅ nhat-hung-pc is already awake. Skipping WOL."
+                            if tailscale ping -c 1 $PC_MAIN >/dev/null 2>&1; then
+                              echo "☕ [PRECHECK] Well well well, [PC-MAIN] is already awake and sipping coffee. Nothing to do here!"
                               echo "already_awake=true" >> $HARNESS_OUTPUT_FILE
                             else
-                              echo "💤 nhat-hung-pc is offline. Proceeding to WOL..."
+                              echo "😴 [PRECHECK] [PC-MAIN] is deep in dreamland. Time to ring the doorbell!"
                               echo "already_awake=false" >> $HARNESS_OUTPUT_FILE
                             fi
+    - stage:
+        name: Wake-on-LAN
+        identifier: wol_stage
+        type: CI
+        variables:
+          - name: TS_AUTHKEY
+            type: Secret
+            value: TAILSCALE_AUTH_KEY
+        when:
+          pipelineStatus: Success
+          condition: <+pipeline.stages.precheck_stage.spec.execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_awake> == "false"
+        spec:
+          cloneCodebase: false
+          platform:
+            os: Linux
+            arch: Arm64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
               - stepGroup:
-                  name: Trigger Wake-on-LAN
+                  name: Install Dependencies
+                  identifier: install_group
+                  steps:
+                    - step:
+                        type: Run
+                        name: Install Tailscale and Tools
+                        identifier: install_tools
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🛠️  [INSTALL] New VM, who dis? Installing our gear again..."
+                            sudo apt-get update -y -qq
+                            sudo apt-get install -y -qq wakeonlan
+                            curl -fsSL https://tailscale.com/install.sh | sudo sh
+                            echo "✅ [INSTALL] Locked and loaded."
+              - stepGroup:
+                  name: Setup Tailscale
+                  identifier: tailscale_group
+                  steps:
+                    - step:
+                        type: Run
+                        name: Authenticate Tailscale
+                        identifier: tailscale_auth
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🔐 [TAILSCALE] Bribing the network bouncer..."
+                            sudo tailscaled &
+                            sleep 5
+                            sudo tailscale up --authkey=$TS_AUTHKEY
+                            echo "🌐 [TAILSCALE] VIP access granted:"
+                            tailscale status
+              - stepGroup:
+                  name: Send Magic Packet
                   identifier: wol_group
-                  when:
-                    stageStatus: Success
-                    condition: <+execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_awake> == "false"
                   steps:
                     - step:
                         type: Run
@@ -88,61 +151,118 @@ pipeline:
                         spec:
                           shell: Bash
                           command: |
-                            echo "=== [WOL] Sending magic packet via phone ==="
+                            echo "📱 [WOL] Calling our guy (the phone) to go knock on [PC-MAIN]'s door..."
 
                             ssh \
                               -i <+secrets.getSSHKeyPath("phone_ssh")> \
                               -p 8022 \
                               -o StrictHostKeyChecking=no \
                               ardent@trcs-a14 \
-                              'echo "[PHONE] Sending WOL packet..." && wol A8:A1:59:D7:40:FD'
+                              'echo "[PHONE] Casting the magic spell... 🪄" && wol A8:A1:59:D7:40:FD'
+
+                            echo "✅ [WOL] Magic packet YEETED across the network. Fingers crossed! 🤞"
+    - stage:
+        name: Verify
+        identifier: verify_stage
+        type: CI
+        variables:
+          - name: TS_AUTHKEY
+            type: Secret
+            value: TAILSCALE_AUTH_KEY
+        when:
+          pipelineStatus: Success
+          condition: <+pipeline.stages.precheck_stage.spec.execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_awake> == "false"
+        spec:
+          cloneCodebase: false
+          platform:
+            os: Linux
+            arch: Arm64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
               - stepGroup:
-                  name: Post-Check
-                  identifier: postcheck_group
-                  parallel: true
-                  when:
-                    stageStatus: Success
-                    condition: <+execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_awake> == "false"
+                  name: Install Dependencies
+                  identifier: install_group
                   steps:
                     - step:
                         type: Run
-                        name: Verify nhat-hung-pc
-                        identifier: verify_pc
+                        name: Install Tailscale and Tools
+                        identifier: install_tools
                         spec:
                           shell: Bash
                           command: |
-                            echo "=== [POSTCHECK] Waiting for nhat-hung-pc ==="
+                            echo "🛠️  [INSTALL] Third VM of the day. We meet again, apt-get."
+                            sudo apt-get update -y -qq
+                            sudo apt-get install -y -qq wakeonlan
+                            curl -fsSL https://tailscale.com/install.sh | sudo sh
+                            echo "✅ [INSTALL] Done. Let's wrap this up."
+              - stepGroup:
+                  name: Setup Tailscale
+                  identifier: tailscale_group
+                  steps:
+                    - step:
+                        type: Run
+                        name: Authenticate Tailscale
+                        identifier: tailscale_auth
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🔐 [TAILSCALE] One last time, I promise..."
+                            sudo tailscaled &
+                            sleep 5
+                            sudo tailscale up --authkey=$TS_AUTHKEY
+                            echo "🌐 [TAILSCALE] Connected. Let's go check on the patients."
+                            tailscale status
+              - stepGroup:
+                  name: Verify PCs Online
+                  identifier: verify_group
+                  steps:
+                    - step:
+                        type: Run
+                        name: Verify PC-MAIN is awake
+                        identifier: verify_pc_main
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🏥 [VERIFY] Checking pulse on [PC-MAIN]... (up to 2 minutes)"
 
                             for i in 1 2; do
-                              echo "Attempt $i: waiting 60s..."
+                              echo "⏳ [VERIFY] Attempt $i/2 — giving [PC-MAIN] 60s to rub its eyes..."
                               sleep 60
 
-                              if tailscale ping -c 1 nhat-hung-pc >/dev/null 2>&1; then
-                                echo "✅ nhat-hung-pc is awake!"
+                              if tailscale ping -c 1 $PC_MAIN >/dev/null 2>&1; then
+                                echo "🎉 [VERIFY] [PC-MAIN] is ALIVE! It has risen!"
                                 exit 0
                               fi
+
+                              echo "😶 [VERIFY] Nothing yet. $([ $i -lt 2 ] && echo 'Trying again...' || echo 'That is all the patience we have.')"
                             done
 
-                            echo "❌ nhat-hung-pc failed to wake after 2 minutes"
+                            echo "💀 [VERIFY] [PC-MAIN] refused to wake up after 2 minutes. Stage failed."
                             exit 1
                     - step:
                         type: Run
-                        name: Verify nhat-hung-pc-1
-                        identifier: verify_pc1
+                        name: Verify PC-BACKUP is awake
+                        identifier: verify_pc_backup
                         spec:
                           shell: Bash
                           command: |
-                            echo "=== [POSTCHECK] Waiting for nhat-hung-pc-1 ==="
+                            echo "🏥 [VERIFY] [PC-MAIN] is up, now checking on its sibling [PC-BACKUP]..."
 
-                            for i in 1 2; do
-                              echo "Attempt $i: waiting 60s..."
-                              sleep 60
+                            if tailscale ping -c 1 $PC_BACKUP >/dev/null 2>&1; then
+                              echo "🎉 [VERIFY] [PC-BACKUP] was already up! Overachiever."
+                              exit 0
+                            fi
 
-                              if tailscale ping -c 1 nhat-hung-pc-1 >/dev/null 2>&1; then
-                                echo "✅ nhat-hung-pc-1 is awake!"
-                                exit 0
-                              fi
-                            done
+                            echo "😴 [VERIFY] [PC-BACKUP] still snoozing. Giving it one last 60s nap..."
+                            sleep 60
 
-                            echo "❌ nhat-hung-pc-1 failed to wake after 2 minutes"
+                            if tailscale ping -c 1 $PC_BACKUP >/dev/null 2>&1; then
+                              echo "🎉 [VERIFY] [PC-BACKUP] finally crawled out of bed. We'll take it!"
+                              exit 0
+                            fi
+
+                            echo "💀 [VERIFY] [PC-BACKUP] is a deep sleeper. Failed to respond after final attempt."
                             exit 1
