@@ -49,34 +49,6 @@ pipeline:
 
                             echo "[SETUP] Tailscale status:"
                             tailscale status
-                    - step:
-                        type: Run
-                        name: Setup SSH Key
-                        identifier: setup_ssh
-                        spec:
-                          shell: Bash
-                          command: |
-                            echo "=== [SETUP] Preparing SSH key ==="
-
-                            mkdir -p ~/.ssh
-                            chmod 700 ~/.ssh
-
-                            if [ -z "$PEM_KEY" ]; then
-                              echo "❌ PEM_KEY env variable is missing"
-                              exit 1
-                            fi
-
-                            echo "$PEM_KEY" > ~/.ssh/phone.pem
-                            chmod 400 ~/.ssh/phone.pem
-
-                            cat <<EOF > ~/.ssh/config
-                            Host phone
-                                HostName trcs-a14
-                                User ardent
-                                Port 8022
-                                IdentityFile ~/.ssh/phone.pem
-                                StrictHostKeyChecking no
-                            EOF
               - stepGroup:
                   name: Pre-Check
                   identifier: precheck_group
@@ -113,10 +85,12 @@ pipeline:
                           command: |
                             echo "=== [WOL] Sending magic packet via phone ==="
 
-                            ssh phone << 'EOF'
-                              echo "[PHONE] Sending WOL packet..."
-                              wol A8:A1:59:D7:40:FD
-                            EOF
+                            ssh \
+                              -i <+secrets.getSSHKeyPath("phone_ssh")> \
+                              -p 8022 \
+                              -o StrictHostKeyChecking=no \
+                              ardent@trcs-a14 \
+                              'echo "[PHONE] Sending WOL packet..." && wol A8:A1:59:D7:40:FD'
               - stepGroup:
                   name: Post-Check
                   identifier: postcheck_group
