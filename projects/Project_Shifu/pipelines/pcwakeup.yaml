@@ -1,5 +1,5 @@
 pipeline:
-  name: pc-wakeup
+  name: PC Wakeup
   identifier: pcwakeup
   projectIdentifier: Project_Shifu
   orgIdentifier: default
@@ -25,7 +25,7 @@ pipeline:
               errors:
                 - AllErrors
               action:
-                type: Abort
+                type: MarkAsFailure
         spec:
           cloneCodebase: false
           platform:
@@ -47,10 +47,18 @@ pipeline:
                         spec:
                           shell: Bash
                           command: |
-                            echo "🛠️  [INSTALL] Suiting up... grabbing our tools from the shed"
+                            echo "🛠️  [INSTALL] Suiting up... adding Tailscale to the guest list first"
+
+                            # Add Tailscale apt repo — skip the install script middleman
+                            curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg \
+                              | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+                            curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list \
+                              | sudo tee /etc/apt/sources.list.d/tailscale.list
+
+                            # One update, one install — everything in a single apt transaction
                             sudo apt-get update -y -qq
-                            sudo apt-get install -y -qq wakeonlan
-                            curl -fsSL https://tailscale.com/install.sh | sudo sh
+                            sudo apt-get install -y -qq tailscale wakeonlan
+
                             echo "✅ [INSTALL] Armed and ready. Tailscale $(tailscale --version | head -1) reporting for duty."
               - stepGroup:
                   name: Setup Tailscale
@@ -108,8 +116,18 @@ pipeline:
                           command: |
                             echo "📱 [WOL] Calling our guy (the phone) to go knock on [PC-MAIN]'s door..."
 
+                            # Write PEM key to disk — Secret File works with raw ssh -i
+                            echo '<+secrets.getValue("ardent-phone")>' > /tmp/phone_key.pem
+                            chmod 600 /tmp/phone_key.pem
+
+                            # Sanity check
+                            if [ ! -s /tmp/phone_key.pem ]; then
+                              echo "💀 [WOL] PEM key is empty or missing! Check secret 'ardent-phone' exists and is in scope."
+                              exit 1
+                            fi
+
                             ssh \
-                              -i <+secrets.getSSHKeyPath("phone-ssh")> \
+                              -i /tmp/phone_key.pem \
                               -p 8022 \
                               -o StrictHostKeyChecking=no \
                               ardent@trcs-a14 \
