@@ -18,10 +18,13 @@ pipeline:
         spec:
           platform:
             os: Linux
-            arch: Amd64
+            arch: Arm64
           runtime:
-            type: Docker
-            spec: {}
+            type: Cloud
+            spec:
+              imageSpec:
+                imageName: atardent/pcwakeup:latest
+                connectorRef: dockerhubconnector
           execution:
             steps:
               - stepGroup:
