@@ -93,7 +93,7 @@ pipeline:
                           command: |
                             echo "👀 [PRECHECK] Peeking to see if [PC-MAIN] is already up and about..."
 
-                            if tailscale ping -c 1 $PC_MAIN >/dev/null 2>&1; then
+                            if tailscale ping --timeout=15s $PC_MAIN >/dev/null 2>&1; then
                               echo "☕ [PRECHECK] Well well well, [PC-MAIN] is already awake and sipping coffee. Nothing to do here!"
                               echo "already_awake=true" >> $HARNESS_OUTPUT_FILE
                             else
