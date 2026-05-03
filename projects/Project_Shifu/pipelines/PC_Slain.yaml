@@ -1,0 +1,154 @@
+pipeline:
+  name: PC Slain
+  identifier: pcslain
+  projectIdentifier: Project_Shifu
+  orgIdentifier: default
+  tags: {}
+  variables:
+    - name: PC_TARGET
+      type: String
+      value: nhat-hung-pc-1
+  stages:
+    - stage:
+        name: Slay PC via Tailscale
+        identifier: slain_stage
+        type: CI
+        variables:
+          - name: TS_AUTHKEY
+            type: Secret
+            value: TAILSCALE_AUTH_KEY
+        failureStrategies:
+          - onFailure:
+              errors:
+                - AllErrors
+              action:
+                type: MarkAsFailure
+        spec:
+          cloneCodebase: false
+          platform:
+            os: Linux
+            arch: Arm64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - stepGroup:
+                  name: Install Dependencies
+                  identifier: install_group
+                  steps:
+                    - step:
+                        type: Run
+                        name: Install Tailscale and Tools
+                        identifier: install_tools
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🛠️  [INSTALL] Sharpening our blade... grabbing tools from the shed"
+
+                            curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg \
+                              | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+                            curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list \
+                              | sudo tee /etc/apt/sources.list.d/tailscale.list
+
+                            sudo apt-get update -y -qq
+                            sudo apt-get install -y -qq tailscale
+
+                            echo "✅ [INSTALL] Blade sharpened. Tailscale $(tailscale --version | head -1) ready for the hunt."
+              - stepGroup:
+                  name: Setup Tailscale
+                  identifier: tailscale_group
+                  steps:
+                    - step:
+                        type: Run
+                        name: Authenticate Tailscale
+                        identifier: tailscale_auth
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🔐 [TAILSCALE] Donning our assassin cloak..."
+                            sudo tailscaled &
+                            sleep 5
+
+                            echo "[TAILSCALE] Flashing our badge to the network bouncer..."
+                            sudo tailscale up --authkey=$TS_AUTHKEY
+
+                            echo "🌐 [TAILSCALE] Infiltration successful. Scouting the network:"
+                            tailscale status
+
+                            echo "🔥 [TAILSCALE] Pre-warming peer path to [PC-TARGET]..."
+                            tailscale ping --timeout=10s $PC_TARGET >/dev/null 2>&1 || true
+                            echo "✅ [TAILSCALE] Target acquired."
+              - stepGroup:
+                  name: Pre-Check
+                  identifier: precheck_group
+                  steps:
+                    - step:
+                        type: Run
+                        name: Check if PC is already shut down
+                        identifier: pre_ping
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🕵️  [PRECHECK] Locating [PC-TARGET]... is it already sleeping with the fishes?"
+
+                            if ! tailscale ping --timeout=15s $PC_TARGET >/dev/null 2>&1; then
+                              echo "💀 [PRECHECK] [PC-TARGET] is already offline. Our work here is done before it even started. Suspiciously efficient."
+                              echo "already_offline=true" >> $HARNESS_OUTPUT_FILE
+                            else
+                              echo "😤 [PRECHECK] [PC-TARGET] is alive and kicking. Not for long..."
+                              echo "already_offline=false" >> $HARNESS_OUTPUT_FILE
+                            fi
+              - stepGroup:
+                  name: Execute Shutdown
+                  identifier: shutdown_group
+                  when:
+                    stageStatus: Success
+                    condition: <+execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_offline> == "false"
+                  steps:
+                    - step:
+                        type: Run
+                        name: Tailscale SSH and shutdown
+                        identifier: shutdown_trigger
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🗡️  [SHUTDOWN] Sneaking in through the Tailscale tunnel..."
+                            echo "🎯 [SHUTDOWN] Target: [PC-TARGET]. Mission: total annihilation (of its uptime)."
+
+                            tailscale ssh \
+                              -o StrictHostKeyChecking=no \
+                              $PC_TARGET \
+                              '/mnt/c/Windows/System32/shutdown.exe /s /t 0'
+
+                            echo "🔪 [SHUTDOWN] The command has been delivered. [PC-TARGET]'s days are numbered. (Specifically: 0)"
+              - stepGroup:
+                  name: Verify PC is Offline
+                  identifier: verify_group
+                  when:
+                    stageStatus: Success
+                    condition: <+execution.steps.precheck_group.steps.pre_ping.output.outputVariables.already_offline> == "false"
+                  steps:
+                    - step:
+                        type: Run
+                        name: Verify PC-TARGET is offline
+                        identifier: verify_offline
+                        spec:
+                          shell: Bash
+                          command: |
+                            echo "🔭 [VERIFY] Waiting for [PC-TARGET] to take its final bow... (up to 2 minutes)"
+
+                            for i in 1 2; do
+                              echo "⏳ [VERIFY] Attempt $i/2 — giving [PC-TARGET] 60s to dramatically collapse..."
+                              sleep 60
+
+                              if ! tailscale ping --timeout=15s $PC_TARGET >/dev/null 2>&1; then
+                                echo "🪦 [VERIFY] [PC-TARGET] has left the chat. Mission accomplished. RIP (Resting in Poweroff)."
+                                exit 0
+                              fi
+
+                              echo "😤 [VERIFY] [PC-TARGET] is still clinging to life. $([ $i -lt 2 ] && echo 'Giving it more time to accept its fate...' || echo 'This is getting awkward.')"
+                            done
+
+                            echo "😱 [VERIFY] [PC-TARGET] REFUSED TO DIE after 2 minutes. Windows being Windows?"
+                            exit 1
