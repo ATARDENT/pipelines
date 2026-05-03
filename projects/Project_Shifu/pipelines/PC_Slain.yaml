@@ -116,21 +116,21 @@ pipeline:
                             echo "🗡️  [SHUTDOWN] Sneaking in through the Tailscale tunnel..."
                             echo "🎯 [SHUTDOWN] Target: [PC-TARGET]. Mission: total annihilation (of its uptime)."
 
-                            # Configure SSH to skip strict checking for all Tailscale hostnames
-                            # tailscale ssh uses system ssh under the hood, so this takes effect
-                            mkdir -p ~/.ssh
-                            cat >> ~/.ssh/config << 'EOF'
-                            Host *.ts.net
-                              StrictHostKeyChecking no
-                              UserKnownHostsFile /dev/null
+                            # Write PEM key to disk — reusing the same key as the phone
+                            echo '<+secrets.getValue("ardent-phone")>' > /tmp/pc_key.pem
+                            chmod 600 /tmp/pc_key.pem
 
-                            Host nhat-hung-pc-1
-                              StrictHostKeyChecking no
-                              UserKnownHostsFile /dev/null
-                            EOF
-                            chmod 600 ~/.ssh/config
+                            if [ ! -s /tmp/pc_key.pem ]; then
+                              echo "💀 [SHUTDOWN] PEM key is empty or missing! Check secret 'ardent-phone' exists and is in scope."
+                              exit 1
+                            fi
 
-                            tailscale ssh $PC_TARGET '/mnt/c/Windows/System32/shutdown.exe /s /t 0'
+                            ssh \
+                              -i /tmp/pc_key.pem \
+                              -o StrictHostKeyChecking=no \
+                              -o UserKnownHostsFile=/dev/null \
+                              ardent@$PC_TARGET \
+                              '/mnt/c/Windows/System32/shutdown.exe /s /t 0'
 
                             echo "🔪 [SHUTDOWN] The command has been delivered. [PC-TARGET]'s days are numbered. (Specifically: 0)"
               - stepGroup:
