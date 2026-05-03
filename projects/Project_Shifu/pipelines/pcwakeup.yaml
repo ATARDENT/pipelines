@@ -13,7 +13,7 @@ pipeline:
         variables:
           - name: TS_AUTHKEY
             type: Secret
-            value: <+secrets.getValue("TAILSCALE_AUTH_KEY")>
+            value: TAILSCALE_AUTH_KEY
         failureStrategies:
           - onFailure:
               errors:
