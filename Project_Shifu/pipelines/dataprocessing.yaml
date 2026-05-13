@@ -22,13 +22,7 @@ pipeline:
     - name: DATASET_REPO
       type: String
       description: GitHub repo to process in org/repo format (e.g. ATARDENT/my-dataset)
-      value: <+input>
-      allowedValues:
-        - ATARDENT/dataset-llm-context-opt
-        - ATARDENT/dataset-llm-size-inference
-        - ATARDENT/dataset-vlm-training
-        - ATARDENT/dataset-vlm-alignment
-        - ATARDENT/dataset-general
+      value: <+input>.allowedValues(ATARDENT/dataset-llm-context-opt,ATARDENT/dataset-llm-size-inference,ATARDENT/dataset-vlm-training,ATARDENT/dataset-vlm-alignment,ATARDENT/dataset-general)
   properties:
     ci:
       codebase:
@@ -45,6 +39,14 @@ pipeline:
         type: CI
         spec:
           cloneCodebase: true
+          infrastructure:
+            type: KubernetesDirect
+            spec:
+              connectorRef: YOUR_K8S_CONNECTOR
+              namespace: harness-ci
+              automountServiceAccountToken: true
+              nodeSelector: {}
+              os: Linux
           execution:
             steps:
               - step:
@@ -147,12 +149,6 @@ pipeline:
                       echo "Pre-validation PASSED"
                     envVariables:
                       RESEARCH_DOMAIN: <+pipeline.variables.RESEARCH_DOMAIN>
-          platform:
-            os: Linux
-            arch: Amd64
-          runtime:
-            type: Docker
-            spec: {}
     - stage:
         name: Compile and Store
         identifier: compile_and_store
