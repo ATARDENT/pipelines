@@ -16,8 +16,8 @@
 # Codebase: this repo (containing the pipeline + scripts).
 # =============================================================================
 pipeline:
-  name: Compile Dataset
-  identifier: compile_dataset
+  name: data-ci
+  identifier: data_ci
   projectIdentifier: <+input>
   orgIdentifier: <+input>
   tags: {}
@@ -28,7 +28,7 @@ pipeline:
         # The pipeline repo itself — Harness clones it into the workspace so
         # `scripts/*.sh` are on disk. The dataset repo is cloned separately
         # inside `acquire_dataset.sh` so its branch can be a runtime input.
-        connectorRef: account.github_pipeline_repo
+        connectorRef: account.github-connector
         repoName: data-pipeline
         build: <+input>
 
