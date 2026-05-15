@@ -3,8 +3,6 @@ pipeline:
   identifier: random_test_pipeline
   projectIdentifier: Project_Shifu
   orgIdentifier: default
-  # Required infrastructure:
-  #   Delegate with selector 'linux-amd64' must be running in the project
   stages:
     - stage:
         name: Test Stage
@@ -70,3 +68,4 @@ pipeline:
                       sleep $SLEEP_TIME
         delegateSelectors:
           - linux-amd64
+          - macos-arm64
