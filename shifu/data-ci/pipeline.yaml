@@ -139,51 +139,52 @@ pipeline:
                                   onTimeout:
                                     action:
                                       type: Abort
-              - step:
-                  type: Run
-                  name: Register to Deputy
-                  identifier: register_deputy
-                  spec:
-                    shell: Bash
-                    command: ./pipeline-scripts/scripts/register_deputy.sh
-              - step:
-                  type: Run
-                  name: Notify
-                  identifier: notify
-                  spec:
-                    shell: Bash
-                    command: ./pipeline-scripts/scripts/notify.sh
-                  failureStrategies:
-                    - onFailure:
-                        errors:
-                          - AllErrors
-                        action:
-                          type: Ignore
-              - step:
-                  type: Run
-                  name: Trigger training
-                  identifier: trigger_training
-                  spec:
-                    shell: Bash
-                    command: ./pipeline-scripts/scripts/trigger_training.sh
-                  failureStrategies:
-                    - onFailure:
-                        errors:
-                          - AllErrors
-                        action:
-                          type: Retry
-                          spec:
-                            retryCount: 2
-                            retryIntervals:
-                              - 30s
-                            onRetryFailure:
-                              action:
-                                type: ManualIntervention
-                                spec:
-                                  timeout: 2h
-                                  onTimeout:
-                                    action:
-                                      type: Abort
+              - parallel:
+                  - step:
+                      type: Run
+                      name: Register to Deputy
+                      identifier: register_deputy
+                      spec:
+                        shell: Bash
+                        command: ./pipeline-scripts/scripts/register_deputy.sh
+                  - step:
+                      type: Run
+                      name: Notify
+                      identifier: notify
+                      spec:
+                        shell: Bash
+                        command: ./pipeline-scripts/scripts/notify.sh
+                      failureStrategies:
+                        - onFailure:
+                            errors:
+                              - AllErrors
+                            action:
+                              type: Ignore
+                  - step:
+                      type: Run
+                      name: Trigger training
+                      identifier: trigger_training
+                      spec:
+                        shell: Bash
+                        command: ./pipeline-scripts/scripts/trigger_training.sh
+                      failureStrategies:
+                        - onFailure:
+                            errors:
+                              - AllErrors
+                            action:
+                              type: Retry
+                              spec:
+                                retryCount: 2
+                                retryIntervals:
+                                  - 30s
+                                onRetryFailure:
+                                  action:
+                                    type: ManualIntervention
+                                    spec:
+                                      timeout: 2h
+                                      onTimeout:
+                                        action:
+                                          type: Abort
         failureStrategies:
           - onFailure:
               errors:
