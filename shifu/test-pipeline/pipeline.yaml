@@ -67,5 +67,4 @@ pipeline:
                       echo "Sleeping for $SLEEP_TIME seconds..."
                       sleep $SLEEP_TIME
         delegateSelectors:
-          - linux-amd64
           - macos-arm64
