@@ -1,0 +1,17 @@
+# Pipeline-side build artefacts (created by setup_env.sh / acquire_dataset.sh)
+.venv/
+dataset-repo/
+
+# Example-dataset compile artefacts (regenerated on every local test run)
+example-dataset/compiled/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor / OS junk
+.DS_Store
+.idea/
+.vscode/
+*.swp

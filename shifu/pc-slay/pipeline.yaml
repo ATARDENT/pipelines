@@ -4,9 +4,13 @@ pipeline:
   projectIdentifier: Project_Shifu
   orgIdentifier: default
   tags: {}
+  # Required secrets (Harness > Project Settings > Secrets):
+  #   TAILSCALE_AUTH_KEY  — Tailscale ephemeral auth key
+  #   phone_ssh_pem       — SSH private key (PEM) for ardent@<PC_TARGET>
   variables:
     - name: PC_TARGET
       type: String
+      description: Tailscale hostname of the PC to shut down
       value: nhat-hung-pc-1
   stages:
     - stage:
@@ -116,7 +120,6 @@ pipeline:
                             echo "🗡️  [SHUTDOWN] Sneaking in through the Tailscale tunnel..."
                             echo "🎯 [SHUTDOWN] Target: [PC-TARGET]. Mission: total annihilation (of its uptime)."
 
-                            # Write PEM key to disk
                             echo '<+secrets.getValue("phone_ssh_pem")>' > /tmp/pc_key.pem
                             chmod 600 /tmp/pc_key.pem
 

@@ -3,6 +3,8 @@ pipeline:
   identifier: random_test_pipeline
   projectIdentifier: Project_Shifu
   orgIdentifier: default
+  # Required infrastructure:
+  #   Delegate with selector 'linux-amd64' must be running in the project
   stages:
     - stage:
         name: Test Stage
@@ -10,6 +12,12 @@ pipeline:
         type: CI
         spec:
           cloneCodebase: false
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
           execution:
             steps:
               - step:
@@ -60,11 +68,5 @@ pipeline:
                       SLEEP_TIME=$(( (RANDOM % 120) + 5 ))
                       echo "Sleeping for $SLEEP_TIME seconds..."
                       sleep $SLEEP_TIME
-          platform:
-            os: Linux
-            arch: Amd64
-          runtime:
-            type: Docker
-            spec: {}
         delegateSelectors:
           - linux-amd64

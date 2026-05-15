@@ -1,0 +1,152 @@
+# =============================================================================
+# Harness pipeline: Compile a raw dataset into a trainable dataset.
+#
+# This file is intentionally short. All real logic lives in `scripts/`, so the
+# pipeline is just orchestration + secrets + inputs. To change behaviour, edit
+# the script — not this YAML.
+#
+# Inputs (provided at runtime):
+#   DATASET_REPO    e.g. "your-org/instruction-tune-v1"  (or full https URL)
+#   DATASET_BRANCH  e.g. "main"
+#
+# Secrets used (replace the `account.*` refs with your own connector / secret IDs):
+#   account.github_token  PAT with repo:write on the dataset repo
+#   account.hf_token      Hugging Face token with write scope
+#
+# Codebase: this repo (containing the pipeline + scripts).
+# =============================================================================
+pipeline:
+  name: Compile Dataset
+  identifier: compile_dataset
+  projectIdentifier: <+input>
+  orgIdentifier: <+input>
+  tags: {}
+
+  properties:
+    ci:
+      codebase:
+        # The pipeline repo itself — Harness clones it into the workspace so
+        # `scripts/*.sh` are on disk. The dataset repo is cloned separately
+        # inside `acquire_dataset.sh` so its branch can be a runtime input.
+        connectorRef: account.github_pipeline_repo
+        repoName: data-pipeline
+        build: <+input>
+
+  variables:
+    - name: DATASET_REPO
+      type: String
+      description: "GitHub repo holding the dataset-template instance, e.g. your-org/instruction-tune-v1"
+      required: true
+      value: <+input>
+    - name: DATASET_BRANCH
+      type: String
+      description: "Branch of the dataset repo to compile from"
+      required: true
+      value: <+input>.default(main)
+
+  stages:
+    - stage:
+        name: Compile
+        identifier: compile
+        type: CI
+        spec:
+          cloneCodebase: true
+          # Use Harness-hosted compute. Swap for KubernetesDirect if you prefer
+          # self-hosted runners.
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Cloud
+            spec: {}
+
+          execution:
+            steps:
+
+              # -------- 1. Python env + dependencies --------
+              - step:
+                  type: Run
+                  name: Setup Python environment
+                  identifier: setup_env
+                  spec:
+                    shell: Bash
+                    command: ./scripts/setup_env.sh
+
+              # -------- 2. Clone dataset repo + run its download.py --------
+              - step:
+                  type: Run
+                  name: Acquire dataset
+                  identifier: acquire_dataset
+                  spec:
+                    shell: Bash
+                    envVariables:
+                      DATASET_REPO: <+pipeline.variables.DATASET_REPO>
+                      DATASET_BRANCH: <+pipeline.variables.DATASET_BRANCH>
+                      GITHUB_TOKEN: <+secrets.getValue("account.github_token")>
+                    command: ./scripts/acquire_dataset.sh
+
+              # -------- 3. Pre-validation gate --------
+              - step:
+                  type: Run
+                  name: Pre-validate
+                  identifier: pre_validate
+                  spec:
+                    shell: Bash
+                    command: ./scripts/pre_validate.sh
+
+              # -------- 4. Compile (gated on configuration.compile=true) --------
+              - step:
+                  type: Run
+                  name: Compile
+                  identifier: compile
+                  spec:
+                    shell: Bash
+                    command: ./scripts/compile_dataset.sh
+
+              # -------- 5. Post-validation gate --------
+              - step:
+                  type: Run
+                  name: Post-validate
+                  identifier: post_validate
+                  spec:
+                    shell: Bash
+                    command: ./scripts/post_validate.sh
+
+              # -------- 6. DVC + upload to remote (HF wired, others stubbed) --------
+              - step:
+                  type: Run
+                  name: Publish (DVC + Hugging Face)
+                  identifier: publish
+                  spec:
+                    shell: Bash
+                    envVariables:
+                      GITHUB_TOKEN: <+secrets.getValue("account.github_token")>
+                      HF_TOKEN: <+secrets.getValue("account.hf_token")>
+                    command: ./scripts/publish.sh
+
+              # -------- 7. Register with deputy service (placeholder) --------
+              - step:
+                  type: Run
+                  name: Register to deputy (TODO)
+                  identifier: register_deputy
+                  spec:
+                    shell: Bash
+                    command: ./scripts/register_deputy.sh
+
+              # -------- 8. Notification (placeholder) --------
+              - step:
+                  type: Run
+                  name: Notify (TODO)
+                  identifier: notify
+                  spec:
+                    shell: Bash
+                    command: ./scripts/notify.sh
+
+              # -------- 9. Trigger downstream training (placeholder) --------
+              - step:
+                  type: Run
+                  name: Trigger training (TODO)
+                  identifier: trigger_training
+                  spec:
+                    shell: Bash
+                    command: ./scripts/trigger_training.sh

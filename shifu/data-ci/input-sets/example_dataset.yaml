@@ -1,0 +1,21 @@
+# Input Set for quick "try it out" runs against the example-dataset/ in this repo.
+#
+# To use this:
+#   1. Push example-dataset/ as its own repo somewhere your Harness GitHub
+#      connector can reach (e.g. your-org/example-dataset).
+#   2. Edit DATASET_REPO below to point at it.
+#   3. In Harness UI, choose this input set when running the pipeline.
+inputSet:
+  name: example-dataset
+  identifier: example_dataset
+  orgIdentifier: <+input>
+  projectIdentifier: <+input>
+  pipeline:
+    identifier: compile_dataset
+    variables:
+      - name: DATASET_REPO
+        type: String
+        value: "your-org/example-dataset"
+      - name: DATASET_BRANCH
+        type: String
+        value: "main"
