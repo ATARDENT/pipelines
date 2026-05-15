@@ -8,19 +8,8 @@ pipeline:
     ci:
       codebase:
         connectorRef: account.github-connector
-        repoName: data-pipeline
+        repoName: <+input>
         build: <+input>
-  variables:
-    - name: DATASET_REPO
-      type: String
-      description: GitHub repo holding the dataset-template instance, e.g. your-org/instruction-tune-v1
-      required: true
-      value: <+input>
-    - name: DATASET_BRANCH
-      type: String
-      description: Branch of the dataset repo to compile from
-      required: true
-      value: <+input>.default(main)
   stages:
     - stage:
         name: Compile
@@ -37,12 +26,17 @@ pipeline:
           execution:
             steps:
               - step:
-                  type: Run
-                  name: Setup Python environment
-                  identifier: setup_env
+                  type: GitClone
+                  name: Clone pipeline scripts
+                  identifier: clone_pipeline_scripts
                   spec:
-                    shell: Bash
-                    command: ./scripts/setup_env.sh
+                    connectorRef: account.github-connector
+                    repoName: data-ci
+                    cloneDirectory: pipeline-scripts
+                    build:
+                      type: branch
+                      spec:
+                        branch: main
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -58,15 +52,31 @@ pipeline:
                                 type: Abort
               - step:
                   type: Run
-                  name: Acquire dataset
+                  name: Setup Python environment
+                  identifier: setup_env
+                  spec:
+                    shell: Bash
+                    command: ./pipeline-scripts/scripts/setup_env.sh
+                  failureStrategies:
+                    - onFailure:
+                        errors:
+                          - AllErrors
+                        action:
+                          type: Retry
+                          spec:
+                            retryCount: 2
+                            retryIntervals:
+                              - 30s
+                            onRetryFailure:
+                              action:
+                                type: Abort
+              - step:
+                  type: Run
+                  name: Prepare dataset workspace
                   identifier: acquire_dataset
                   spec:
                     shell: Bash
-                    envVariables:
-                      DATASET_REPO: <+pipeline.variables.DATASET_REPO>
-                      DATASET_BRANCH: <+pipeline.variables.DATASET_BRANCH>
-                      GITHUB_TOKEN: <+secrets.getValue("account.github_token")>
-                    command: ./scripts/acquire_dataset.sh
+                    command: ./pipeline-scripts/scripts/acquire_dataset.sh
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -86,21 +96,21 @@ pipeline:
                   identifier: pre_validate
                   spec:
                     shell: Bash
-                    command: ./scripts/pre_validate.sh
+                    command: ./pipeline-scripts/scripts/pre_validate.sh
               - step:
                   type: Run
                   name: Compile
                   identifier: compile
                   spec:
                     shell: Bash
-                    command: ./scripts/compile_dataset.sh
+                    command: ./pipeline-scripts/scripts/compile_dataset.sh
               - step:
                   type: Run
                   name: Post-validate
                   identifier: post_validate
                   spec:
                     shell: Bash
-                    command: ./scripts/post_validate.sh
+                    command: ./pipeline-scripts/scripts/post_validate.sh
               - step:
                   type: Run
                   name: Publish
@@ -110,7 +120,7 @@ pipeline:
                     envVariables:
                       GITHUB_TOKEN: <+secrets.getValue("account.github_token")>
                       HF_TOKEN: <+secrets.getValue("account.hf_token")>
-                    command: ./scripts/publish.sh
+                    command: ./pipeline-scripts/scripts/publish.sh
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -135,14 +145,14 @@ pipeline:
                   identifier: register_deputy
                   spec:
                     shell: Bash
-                    command: ./scripts/register_deputy.sh
+                    command: ./pipeline-scripts/scripts/register_deputy.sh
               - step:
                   type: Run
                   name: Notify
                   identifier: notify
                   spec:
                     shell: Bash
-                    command: ./scripts/notify.sh
+                    command: ./pipeline-scripts/scripts/notify.sh
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -155,7 +165,7 @@ pipeline:
                   identifier: trigger_training
                   spec:
                     shell: Bash
-                    command: ./scripts/trigger_training.sh
+                    command: ./pipeline-scripts/scripts/trigger_training.sh
                   failureStrategies:
                     - onFailure:
                         errors:
