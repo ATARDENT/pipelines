@@ -18,8 +18,8 @@
 pipeline:
   name: data-ci
   identifier: data_ci
-  projectIdentifier: <+input>
-  orgIdentifier: <+input>
+  projectIdentifier: Project Shifu
+  orgIdentifier: default
   tags: {}
 
   properties:
