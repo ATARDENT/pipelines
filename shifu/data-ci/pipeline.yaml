@@ -52,6 +52,19 @@ pipeline:
                                 type: Abort
               - step:
                   type: Run
+                  name: DEBUG
+                  identifier: debug_find
+                  spec:
+                    shell: Bash
+                    command: |
+                      echo "=== CWD ==="
+                      pwd
+                      echo "=== Workspace root ==="
+                      ls -la /harness/
+                      echo "=== Find setup_env.sh ==="
+                      find / -name "setup_env.sh" 2>/dev/null
+              - step:
+                  type: Run
                   name: Setup Python environment
                   identifier: setup_env
                   spec:
