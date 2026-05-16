@@ -52,24 +52,11 @@ pipeline:
                                 type: Abort
               - step:
                   type: Run
-                  name: DEBUG
-                  identifier: debug_find
-                  spec:
-                    shell: Bash
-                    command: |
-                      echo "=== CWD ==="
-                      pwd
-                      echo "=== Workspace root ==="
-                      ls -la /harness/
-                      echo "=== Find setup_env.sh ==="
-                      find / -name "setup_env.sh" 2>/dev/null
-              - step:
-                  type: Run
                   name: Setup Python environment
                   identifier: setup_env
                   spec:
                     shell: Bash
-                    command: bash ./pipeline-scripts/shifu/data-ci/scripts/setup_env.sh
+                    command: bash $HARNESS_WORKSPACE/pipeline-scripts/shifu/data-ci/scripts/setup_env.sh
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -89,7 +76,7 @@ pipeline:
                   identifier: acquire_dataset
                   spec:
                     shell: Bash
-                    command: bash ./pipeline-scripts/shifu/data-ci/scripts/acquire_dataset.sh
+                    command: bash $HARNESS_WORKSPACE/pipeline-scripts/shifu/data-ci/scripts/acquire_dataset.sh
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -109,21 +96,21 @@ pipeline:
                   identifier: pre_validate
                   spec:
                     shell: Bash
-                    command: bash ./pipeline-scripts/shifu/data-ci/scripts/pre_validate.sh
+                    command: bash $HARNESS_WORKSPACE/pipeline-scripts/shifu/data-ci/scripts/pre_validate.sh
               - step:
                   type: Run
                   name: Compile
                   identifier: compile
                   spec:
                     shell: Bash
-                    command: bash ./pipeline-scripts/shifu/data-ci/scripts/compile_dataset.sh
+                    command: bash $HARNESS_WORKSPACE/pipeline-scripts/shifu/data-ci/scripts/compile_dataset.sh
               - step:
                   type: Run
                   name: Post-validate
                   identifier: post_validate
                   spec:
                     shell: Bash
-                    command: bash ./pipeline-scripts/shifu/data-ci/scripts/post_validate.sh
+                    command: bash $HARNESS_WORKSPACE/pipeline-scripts/shifu/data-ci/scripts/post_validate.sh
               - step:
                   type: Run
                   name: Publish
@@ -133,7 +120,7 @@ pipeline:
                     envVariables:
                       GITHUB_TOKEN: <+secrets.getValue("account.github_token")>
                       HF_TOKEN: <+secrets.getValue("account.hf_token")>
-                    command: bash ./pipeline-scripts/shifu/data-ci/scripts/publish.sh
+                    command: bash $HARNESS_WORKSPACE/pipeline-scripts/shifu/data-ci/scripts/publish.sh
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -159,14 +146,14 @@ pipeline:
                       identifier: register_deputy
                       spec:
                         shell: Bash
-                        command: bash ./pipeline-scripts/shifu/data-ci/scripts/register_deputy.sh
+                        command: bash $HARNESS_WORKSPACE/pipeline-scripts/shifu/data-ci/scripts/register_deputy.sh
                   - step:
                       type: Run
                       name: Notify
                       identifier: notify
                       spec:
                         shell: Bash
-                        command: bash ./pipeline-scripts/shifu/data-ci/scripts/notify.sh
+                        command: bash $HARNESS_WORKSPACE/pipeline-scripts/shifu/data-ci/scripts/notify.sh
                       failureStrategies:
                         - onFailure:
                             errors:
@@ -179,7 +166,7 @@ pipeline:
                       identifier: trigger_training
                       spec:
                         shell: Bash
-                        command: bash ./pipeline-scripts/shifu/data-ci/scripts/trigger_training.sh
+                        command: bash $HARNESS_WORKSPACE/pipeline-scripts/shifu/data-ci/scripts/trigger_training.sh
                       failureStrategies:
                         - onFailure:
                             errors:
