@@ -31,7 +31,7 @@ pipeline:
                   identifier: clone_pipeline_scripts
                   spec:
                     connectorRef: githubconnector
-                    repoName: data-ci
+                    repoName: pipelines
                     cloneDirectory: pipeline-scripts
                     build:
                       type: branch
@@ -56,7 +56,7 @@ pipeline:
                   identifier: setup_env
                   spec:
                     shell: Bash
-                    command: ./pipeline-scripts/scripts/setup_env.sh
+                    command: ./pipeline-scripts/shifu/data-ci/scripts/setup_env.sh
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -76,7 +76,7 @@ pipeline:
                   identifier: acquire_dataset
                   spec:
                     shell: Bash
-                    command: ./pipeline-scripts/scripts/acquire_dataset.sh
+                    command: ./pipeline-scripts/shifu/data-ci/scripts/acquire_dataset.sh
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -96,21 +96,21 @@ pipeline:
                   identifier: pre_validate
                   spec:
                     shell: Bash
-                    command: ./pipeline-scripts/scripts/pre_validate.sh
+                    command: ./pipeline-scripts/shifu/data-ci/scripts/pre_validate.sh
               - step:
                   type: Run
                   name: Compile
                   identifier: compile
                   spec:
                     shell: Bash
-                    command: ./pipeline-scripts/scripts/compile_dataset.sh
+                    command: ./pipeline-scripts/shifu/data-ci/scripts/compile_dataset.sh
               - step:
                   type: Run
                   name: Post-validate
                   identifier: post_validate
                   spec:
                     shell: Bash
-                    command: ./pipeline-scripts/scripts/post_validate.sh
+                    command: ./pipeline-scripts/shifu/data-ci/scripts/post_validate.sh
               - step:
                   type: Run
                   name: Publish
@@ -120,7 +120,7 @@ pipeline:
                     envVariables:
                       GITHUB_TOKEN: <+secrets.getValue("account.github_token")>
                       HF_TOKEN: <+secrets.getValue("account.hf_token")>
-                    command: ./pipeline-scripts/scripts/publish.sh
+                    command: ./pipeline-scripts/shifu/data-ci/scripts/publish.sh
                   failureStrategies:
                     - onFailure:
                         errors:
@@ -146,14 +146,14 @@ pipeline:
                       identifier: register_deputy
                       spec:
                         shell: Bash
-                        command: ./pipeline-scripts/scripts/register_deputy.sh
+                        command: ./pipeline-scripts/shifu/data-ci/scripts/register_deputy.sh
                   - step:
                       type: Run
                       name: Notify
                       identifier: notify
                       spec:
                         shell: Bash
-                        command: ./pipeline-scripts/scripts/notify.sh
+                        command: ./pipeline-scripts/shifu/data-ci/scripts/notify.sh
                       failureStrategies:
                         - onFailure:
                             errors:
@@ -166,7 +166,7 @@ pipeline:
                       identifier: trigger_training
                       spec:
                         shell: Bash
-                        command: ./pipeline-scripts/scripts/trigger_training.sh
+                        command: ./pipeline-scripts/shifu/data-ci/scripts/trigger_training.sh
                       failureStrategies:
                         - onFailure:
                             errors:
