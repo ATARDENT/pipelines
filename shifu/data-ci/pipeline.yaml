@@ -33,7 +33,7 @@ pipeline:
                     shell: Bash
                     command: |
                       git clone --depth 1 --branch main \
-                        "https://github.com/ATARDENT/pipelines.git" \
+                        "git@github.com:ATARDENT/pipelines.git" \
                         "$PWD/pipeline-scripts"
                   failureStrategies:
                     - onFailure:
