@@ -4,9 +4,6 @@ pipeline:
   projectIdentifier: Project_Shifu
   orgIdentifier: default
   tags: {}
-  # Required secrets (Harness > Project Settings > Secrets):
-  #   TAILSCALE_AUTH_KEY  — Tailscale ephemeral auth key
-  #   phone_ssh_pem       — SSH private key (PEM) for ardent@<PC_TARGET>
   variables:
     - name: PC_TARGET
       type: String
@@ -120,11 +117,11 @@ pipeline:
                             echo "🗡️  [SHUTDOWN] Sneaking in through the Tailscale tunnel..."
                             echo "🎯 [SHUTDOWN] Target: [PC-TARGET]. Mission: total annihilation (of its uptime)."
 
-                            echo '<+secrets.getValue("phone_ssh_pem")>' > /tmp/pc_key.pem
+                            echo '<+secrets.getValue("ardent-phone")>' > /tmp/pc_key.pem
                             chmod 600 /tmp/pc_key.pem
 
                             if [ ! -s /tmp/pc_key.pem ]; then
-                              echo "💀 [SHUTDOWN] PEM key is empty or missing! Check secret 'phone_ssh_pem' exists and is in scope."
+                              echo "💀 [SHUTDOWN] PEM key is empty or missing! Check secret 'ardent-phone' exists and is in scope."
                               exit 1
                             fi
 
