@@ -1,45 +1,50 @@
 #!/usr/bin/env bash
-# Step 2: Prepare the dataset workspace.
+# Shared helpers for all pipeline scripts. Sourced, not executed.
+
+set -Eeuo pipefail
+
+# Colour-free logging — Harness terminals render plain text best.
+log()  { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+die()  { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
+
+# Workspace layout in Harness CI:
 #
-# The dataset repo is ALREADY cloned by Harness (CI Codebase) into
-# $HARNESS_WORKSPACE / $DATASET_DIR. This script just:
-#   1. Sets git identity for the commit + tag that publish.sh will make later.
-#   2. Verifies the repo follows the data-template layout.
-#   3. Installs the dataset's requirements.txt if present.
-#   4. Runs the dataset's own dataset/download.py to fetch remote raw files.
+#   /harness                        ← CI Codebase (the DATASET repo, cloned by Harness)
+#   /harness/pipeline-scripts       ← data-ci (cloned by the GitClone step)
+#   /harness/.venv                  ← Python venv (created by setup_env.sh)
+#
+# So the path variables map as:
+#   PIPELINE_ROOT  → /harness/pipeline-scripts   (where these scripts live)
+#   DATASET_DIR    → /harness                    (the dataset repo working tree)
+#   VENV_DIR       → /harness/.venv              (per-run venv at workspace root)
+#
+# Override any of these in your environment for local testing.
+export PIPELINE_ROOT="${PIPELINE_ROOT:-$PWD/pipeline-scripts}"
+export DATASET_DIR="${DATASET_DIR:-$PWD}"
+export VENV_DIR="${VENV_DIR:-$PWD/.venv}"
 
-# shellcheck source=lib/common.sh
-source "$(dirname "$0")/lib/common.sh"
-
-banner "Prepare dataset workspace at $DATASET_DIR"
-
-[[ -d "$DATASET_DIR" ]] || die "DATASET_DIR ($DATASET_DIR) not found — is the codebase clone configured?"
-
-# Configure git identity for later commits/tags from publish.sh.
-git -C "$DATASET_DIR" config user.email "${GIT_AUTHOR_EMAIL:-harness-bot@example.com}"
-git -C "$DATASET_DIR" config user.name  "${GIT_AUTHOR_NAME:-harness-bot}"
-
-# Sanity checks on the data-template layout.
-for required in dataset/source.yaml dataset/download.py configuration.yaml \
-                pre-rules/validate.py post-rules/validate.py script/compile.py; do
-  if [[ ! -f "$DATASET_DIR/$required" ]]; then
-    die "Repo does not match data-template layout: missing $required"
+# Always activate the venv inside step scripts (no-op if not created yet).
+activate_venv() {
+  if [[ -d "$VENV_DIR" ]]; then
+    # shellcheck disable=SC1091
+    source "$VENV_DIR/bin/activate"
   fi
-done
-log "Repo layout OK"
+}
 
-# Install dataset-specific Python deps.
-if [[ -f "$DATASET_DIR/requirements.txt" ]]; then
+# Read a dotted path from `configuration.yaml` inside the dataset repo.
+#   read_config output.name             -> "instruction-tune-v1"
+#   read_config output.hf_repo_id ""    -> "" if unset (with default)
+read_config() {
+  local key="$1"
+  local default="${2:-}"
   activate_venv
-  log "Installing $DATASET_DIR/requirements.txt"
-  python -m pip install --quiet -r "$DATASET_DIR/requirements.txt"
-fi
+  python "$PIPELINE_ROOT/scripts/lib/read_config.py" \
+    --config "$DATASET_DIR/configuration.yaml" \
+    --key "$key" \
+    --default "$default"
+}
 
-# Run the dataset's own download script. For inline (location: github) datasets
-# this is a verification pass; for remote (location: remote) datasets it
-# actually fetches the raw files.
-activate_venv
-banner "Run dataset/download.py"
-( cd "$DATASET_DIR" && python dataset/download.py )
-
-log "Prepare OK"
+# Print a banner so step output is easy to scan in the Harness UI.
+banner() {
+  printf '\n========== %s ==========\n' "$*"
+}
