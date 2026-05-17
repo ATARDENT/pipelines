@@ -7,10 +7,10 @@
 # See README.md for the contract each script implements.
 # ════════════════════════════════════════════════════════════════════════════
 pipeline:
-  name: TrainingTemplateRunner
-  identifier: TrainingTemplateRunner
-  projectIdentifier: <+input>
-  orgIdentifier: <+input>
+  name: model-ci
+  identifier: model_ci
+  projectIdentifier: Project_Shifu
+  orgIdentifier: default
   description: Generic runner for any training-template instance.
 
   # ── Codebase: which training-template instance + which build ────────────
