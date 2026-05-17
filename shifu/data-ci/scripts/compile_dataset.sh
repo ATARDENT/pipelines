@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Step 4: compile raw -> trainable, honouring `compile: true|false` in
-# the dataset's configuration.yaml.
+# Step 4: compile raw -> trainable, honouring `steps.compile.enabled` in
+# manifest.yaml.
 
 # shellcheck source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -8,22 +8,36 @@ source "$(dirname "$0")/lib/common.sh"
 banner "Compile dataset"
 activate_venv
 
-compile_flag="$(read_config compile true)"
-if [[ "$compile_flag" != "true" ]]; then
-  log "configuration.yaml has compile=$compile_flag — skipping compile + post-validate + store"
+enabled="$(read_config steps.compile.enabled true)"
+if [[ "$enabled" != "true" ]]; then
+  log "steps.compile.enabled=$enabled — skipping compile + post-validate + publish"
+  # Signal downstream steps via Harness's output file (best-effort).
   echo "SKIP_COMPILE=1" >> "${HARNESS_OUTPUT_FILE:-/dev/null}" 2>/dev/null || true
   exit 0
 fi
 
+script_path="$(read_config steps.compile.script scripts/compile/compile.py)"
 output_name="$(read_config output.name dataset-train)"
-log "Compiling -> compiled/${output_name}.jsonl (or whatever script/compile.py emits)"
+folder_path="$(read_config output.folder_path ./compiled)"
 
-( cd "$DATASET_DIR" && python script/compile.py )
+log "Running $script_path"
+log "Expected output dir (output.folder_path) = $folder_path"
+log "Expected artifact name (output.name)     = $output_name"
 
-# Verify something landed under compiled/.
-if [[ ! -d "$DATASET_DIR/compiled" ]] || [[ -z "$(ls -A "$DATASET_DIR/compiled" 2>/dev/null)" ]]; then
-  die "compile.py did not produce any files under compiled/"
+[[ -f "$DATASET_DIR/$script_path" ]] || die "Missing $DATASET_DIR/$script_path"
+
+( cd "$DATASET_DIR" && python "$script_path" )
+
+# Resolve folder_path relative to the dataset dir (supports "./compiled",
+# "compiled", or an absolute path).
+case "$folder_path" in
+  /*) out_dir="$folder_path" ;;
+  *)  out_dir="$DATASET_DIR/${folder_path#./}" ;;
+esac
+
+if [[ ! -d "$out_dir" ]] || [[ -z "$(ls -A "$out_dir" 2>/dev/null)" ]]; then
+  die "compile.py did not produce any files under $out_dir"
 fi
 
-log "Compile OK — files in compiled/:"
-ls -la "$DATASET_DIR/compiled"
+log "Compile OK — files in $out_dir:"
+ls -la "$out_dir"
