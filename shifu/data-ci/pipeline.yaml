@@ -18,8 +18,8 @@ pipeline:
         spec:
           cloneCodebase: true
           platform:
-            os: MacOS
-            arch: Arm64
+            os: Linux
+            arch: Amd64
           runtime:
             type: Docker
             spec: {}
@@ -190,4 +190,4 @@ pipeline:
               action:
                 type: MarkAsFailure
         delegateSelectors:
-          - macos-arm64
+          - linux-amd64
