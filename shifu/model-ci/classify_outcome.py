@@ -5,16 +5,17 @@ Reads:
     /shared/training_status.json   Written by train_supervisor.py.
     Schema:
         {
-            "state":      "completed" | "approved" | "rejected" | "spot_revoked",
+            "state":      "completed" | "approved" | "rejected" | "spot_revoked" | "failed",
             "exit_code":  int,
             "checkpoint": "/absolute/path/or/empty",
-            ...
         }
 
 Writes:
     $HARNESS_OUTPUT_FILE
-        outcome=<state>
+        training_state=<state>
         checkpoint=<path>
+
+Exits non-zero on state=="failed" so the pipeline reflects the failure.
 """
 from __future__ import annotations
 import json
@@ -23,12 +24,13 @@ import sys
 
 
 STATUS_FILE = "/shared/training_status.json"
-VALID_STATES = {"completed", "approved", "rejected", "spot_revoked"}
+VALID_STATES = {"completed", "approved", "rejected", "spot_revoked", "failed"}
 
 
 def main() -> int:
     if not os.path.exists(STATUS_FILE):
-        print(f"missing {STATUS_FILE} — supervisor did not write final state", file=sys.stderr)
+        print(f"missing {STATUS_FILE} — supervisor did not write final state",
+              file=sys.stderr)
         return 1
 
     with open(STATUS_FILE) as f:
@@ -42,11 +44,16 @@ def main() -> int:
     out = os.environ.get("HARNESS_OUTPUT_FILE")
     if out:
         with open(out, "a") as f:
-            f.write(f"outcome={state}\n")
+            f.write(f"training_state={state}\n")
             f.write(f"checkpoint={status.get('checkpoint', '')}\n")
 
-    print(f"✓ outcome: {state}  checkpoint: {status.get('checkpoint', '<none>')}")
-    return 0
+    print(f"✓ training_state: {state}  "
+          f"checkpoint: {status.get('checkpoint', '<none>')}")
+
+    # Surface hard failures up to the pipeline. "rejected" and "spot_revoked"
+    # are NOT failures — they're legitimate paths the downstream conditions
+    # handle by skipping the right stages.
+    return 1 if state == "failed" else 0
 
 
 if __name__ == "__main__":
