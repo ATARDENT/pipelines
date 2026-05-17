@@ -11,9 +11,9 @@ die()  { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 #   PIPELINE_ROOT  — checkout of THIS repo (pipeline scripts + templates)
 #   DATASET_DIR    — clone of the user's dataset repo at the requested branch
 #   VENV_DIR       — Python venv created in setup_env.sh and reused after
-export PIPELINE_ROOT="${PIPELINE_ROOT:-$HARNESS_WORKSPACE}"
-export DATASET_DIR="${DATASET_DIR:-$PIPELINE_ROOT/dataset-repo}"
-export VENV_DIR="${VENV_DIR:-$PIPELINE_ROOT/.venv}"
+export PIPELINE_ROOT="${PIPELINE_ROOT:-$PWD/pipeline-scripts}"
+export DATASET_DIR="${DATASET_DIR:-$PWD}"
+export VENV_DIR="${VENV_DIR:-$PWD/.venv}"
 
 # Always activate the venv inside step scripts (no-op if not created yet).
 activate_venv() {
