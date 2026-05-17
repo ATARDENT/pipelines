@@ -1,5 +1,5 @@
 pipeline:
-  name: PC Wakeup
+  name: pc-wakeup
   identifier: pcwakeup
   projectIdentifier: Project_Shifu
   orgIdentifier: default
