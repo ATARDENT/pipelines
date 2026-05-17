@@ -1,11 +1,13 @@
 """Print a dotted-path value from a YAML file, used by shell scripts.
 
     python read_config.py --config foo.yaml --key output.name --default ""
+    python read_config.py --config foo.yaml --key variables --format json --default "{}"
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -17,6 +19,13 @@ def main() -> int:
     p.add_argument("--config", required=True)
     p.add_argument("--key", required=True)
     p.add_argument("--default", default="")
+    p.add_argument(
+        "--format",
+        default="text",
+        choices=["text", "json"],
+        help="Output format: 'text' for scalar values (default), "
+             "'json' for any value including dicts and lists.",
+    )
     args = p.parse_args()
 
     cfg_path = Path(args.config)
@@ -33,10 +42,12 @@ def main() -> int:
             print(args.default)
             return 0
 
-    if isinstance(node, bool):
-        print("true" if node else "false")
-    elif node is None:
+    if node is None:
         print(args.default)
+    elif args.format == "json":
+        print(json.dumps(node))
+    elif isinstance(node, bool):
+        print("true" if node else "false")
     else:
         print(node)
     return 0
