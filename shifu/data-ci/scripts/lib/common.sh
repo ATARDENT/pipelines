@@ -8,10 +8,13 @@ log()  { printf '[%s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die()  { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 
 # Paths used by every step. Set once, used everywhere.
-#   PIPELINE_ROOT  — checkout of THIS repo (pipeline scripts + templates)
+#   PIPELINE_ROOT  — checkout of THIS repo, scoped to shifu/data-ci
+#                    (Step 0 clones the whole monorepo into ./pipeline-scripts;
+#                     the data-ci tree lives at pipeline-scripts/shifu/data-ci)
 #   DATASET_DIR    — clone of the user's dataset repo at the requested branch
+#                    (Harness CI Codebase clones it to $PWD)
 #   VENV_DIR       — Python venv created in setup_env.sh and reused after
-export PIPELINE_ROOT="${PIPELINE_ROOT:-$PWD/pipeline-scripts}"
+export PIPELINE_ROOT="${PIPELINE_ROOT:-$PWD/pipeline-scripts/shifu/data-ci}"
 export DATASET_DIR="${DATASET_DIR:-$PWD}"
 export VENV_DIR="${VENV_DIR:-$PWD/.venv}"
 
@@ -23,15 +26,15 @@ activate_venv() {
   fi
 }
 
-# Read a dotted path from `configuration.yaml` inside the dataset repo.
-#   read_config output.name             -> "instruction-tune-v1"
-#   read_config output.hf_repo_id ""    -> "" if unset (with default)
+# Read a dotted path from `manifest.yaml` inside the dataset repo.
+#   read_config output.name                     -> "instruction-tune-v1"
+#   read_config remote.huggingface.repo_id ""   -> "" if unset (with default)
 read_config() {
   local key="$1"
   local default="${2:-}"
   activate_venv
   python "$PIPELINE_ROOT/scripts/lib/read_config.py" \
-    --config "$DATASET_DIR/configuration.yaml" \
+    --config "$DATASET_DIR/manifest.yaml" \
     --key "$key" \
     --default "$default"
 }
