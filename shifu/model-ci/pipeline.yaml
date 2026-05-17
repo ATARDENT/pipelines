@@ -1,0 +1,440 @@
+# ════════════════════════════════════════════════════════════════════════════
+# Harness pipeline — training-template runner
+# ----------------------------------------------------------------------------
+# Each pipeline run is an instance of the training-template repo.
+# Runs on a self-managed Linux AMD64 VM (Harness VM Pool infrastructure).
+# Orchestration lives here; all step logic lives in sibling *.py / *.sh files.
+# See README.md for the contract each script implements.
+# ════════════════════════════════════════════════════════════════════════════
+pipeline:
+  name: TrainingTemplateRunner
+  identifier: TrainingTemplateRunner
+  projectIdentifier: <+input>
+  orgIdentifier: <+input>
+  description: Generic runner for any training-template instance.
+
+  # ── Codebase: which training-template instance + which build ────────────
+  properties:
+    ci:
+      codebase:
+        connectorRef: <+input>
+        repoName: <+input>
+        build: <+input>
+
+  # ── Pipeline-wide variables ─────────────────────────────────────────────
+  variables:
+    - name: datasetDeputyUuid
+      type: String
+      description: Optional override; otherwise read from manifest.yaml
+      value: <+input>.default("")
+    - name: trainingRunId
+      type: String
+      description: Unique ID for this run — embedded in checkpoint paths
+      value: <+pipeline.executionId>
+    - name: approvalUserGroup
+      type: String
+      description: Harness user group authorised to approve interrupts
+      value: <+input>.default("account.ml_reviewers")
+    - name: vmPoolName
+      type: String
+      description: Name of the Harness VM Pool (Linux AMD64) configured on the delegate
+      value: <+input>.default("linux-amd64-pool")
+
+  stages:
+
+    # ════════════════════════════════════════════════════════════════════
+    # STAGE 1 — Validate          (README Steps 1, 2, 3 + script gates)
+    # ════════════════════════════════════════════════════════════════════
+    - stage:
+        name: Validate
+        identifier: Validate
+        type: CI
+        spec:
+          cloneCodebase: true
+          # Self-managed Linux AMD64 VM via Harness VM Pool infrastructure.
+          # The pool is provisioned by the Harness delegate (drone-runner-aws
+          # or equivalent); see README.md for setup notes.
+          infrastructure:
+            type: VM
+            spec:
+              type: Pool
+              spec:
+                poolName: <+pipeline.variables.vmPoolName>
+                os: Linux
+          sharedPaths:
+            - /shared
+          execution:
+            steps:
+
+              - step:
+                  identifier: ParseManifest
+                  name: ParseManifest
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    command: python parse_manifest.py
+                    outputVariables:
+                      - name: manifest_version
+                      - name: dataset_deputy
+
+              # ── New: script-compilability gates (run before any GPU spend) ──
+              - step:
+                  identifier: ValidateScriptsCompile
+                  name: ValidateScriptsCompile
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    command: bash validate_scripts_compile.sh
+
+              - step:
+                  identifier: ValidateScriptsLint
+                  name: ValidateScriptsLint
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    command: bash validate_scripts_lint.sh
+
+              - step:
+                  identifier: ValidateScriptsDryRun
+                  name: ValidateScriptsDryRun
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    command: python validate_scripts_dry_run.py
+
+              # ── README Step 1 — Clone dataset (via internal deputy CLI) ──
+              - step:
+                  identifier: Step1CloneDataset
+                  name: Step1CloneDataset
+                  type: Run
+                  spec:
+                    connectorRef: account.your_internal_registry
+                    image: internal/ci-tools:latest
+                    shell: Bash
+                    envVariables:
+                      DEPUTY_UUID: <+steps.ParseManifest.output.outputVariables.dataset_deputy>
+                      OVERRIDE_UUID: <+pipeline.variables.datasetDeputyUuid>
+                    command: bash clone_dataset.sh
+                    outputVariables:
+                      - name: dataset_path
+
+              # ── README Step 2 — Validate dataset ──
+              - step:
+                  identifier: Step2ValidateDataset
+                  name: Step2ValidateDataset
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      DATASET_PATH: <+steps.Step1CloneDataset.output.outputVariables.dataset_path>
+                    command: python validate_dataset.py
+
+              # ── README Step 3 — Split data ──
+              - step:
+                  identifier: Step3SplitData
+                  name: Step3SplitData
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      DATASET_PATH: <+steps.Step1CloneDataset.output.outputVariables.dataset_path>
+                    command: python run_split.py
+                    outputVariables:
+                      - name: splits_dir
+
+    # ════════════════════════════════════════════════════════════════════
+    # STAGE 2 — Train             (README Steps 4, 5, 6, 7)
+    # ════════════════════════════════════════════════════════════════════
+    # `useFromStage: Validate` routes this stage back to the SAME VM so
+    # the workspace, /shared, and Docker layer cache are all preserved.
+    - stage:
+        name: Train
+        identifier: Train
+        type: CI
+        spec:
+          cloneCodebase: false
+          infrastructure:
+            useFromStage: Validate
+          sharedPaths:
+            - /shared
+          execution:
+            steps:
+
+              # ── README Step 4 — Provision provider machine ──
+              - step:
+                  identifier: Step4ProvisionBackend
+                  name: Step4ProvisionBackend
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      COLAB_EXTENSION_CLIENT_ID: <+secrets.getValue("colab_client_id")>
+                      COLAB_EXTENSION_CLIENT_SECRET: <+secrets.getValue("colab_client_secret")>
+                      COLAB_EXTENSION_ENVIRONMENT: <+secrets.getValue("colab_env")>
+                      AWS_ACCESS_KEY_ID: <+secrets.getValue("aws_access_key")>
+                      AWS_SECRET_ACCESS_KEY: <+secrets.getValue("aws_secret_key")>
+                      THUNDER_API_KEY: <+secrets.getValue("thundercompute_api_key")>
+                    command: python provision.py
+                    outputVariables:
+                      - name: instance_id
+                      - name: backend
+
+              # ── README Step 5 — Resume check ──
+              - step:
+                  identifier: Step5ResumeCheck
+                  name: Step5ResumeCheck
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    command: python find_checkpoint.py
+                    outputVariables:
+                      - name: resume_from
+
+              # ── README Step 6 — Train (long-running supervisor) ──
+              # Background step: returns to the pipeline immediately, keeps
+              # the supervisor running on the VM. Supervisor owns the
+              # mlrunner Server handle and watches /shared/signal.txt for
+              # an inbound interrupt/kill from the approval branch below.
+              - step:
+                  identifier: Step6Supervisor
+                  name: Step6Supervisor
+                  type: Background
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      SPLITS_DIR:  <+stages.Validate.spec.execution.steps.Step3SplitData.output.outputVariables.splits_dir>
+                      RESUME_FROM: <+steps.Step5ResumeCheck.output.outputVariables.resume_from>
+                      RUN_ID:      <+pipeline.variables.trainingRunId>
+                    command: python train_supervisor.py
+
+              # ── README Step 7 — In parallel: log metrics + await approval ──
+              # The parallel block has two branches that BOTH terminate
+              # under each of the 4 outcomes (7.1–7.4). Coordination is
+              # via /shared/signal.txt (control in) and
+              # /shared/training_status.json (state out). The supervisor
+              # above is the only thing that writes the status file.
+              - parallel:
+
+                  # 7.a — Stream metrics until supervisor reports terminal
+                  - step:
+                      identifier: Step7StreamMetrics
+                      name: Step7StreamMetrics
+                      type: Run
+                      timeout: 25h
+                      spec:
+                        connectorRef: account.dockerhub
+                        image: python:3.11-slim
+                        shell: Bash
+                        envVariables:
+                          WANDB_API_KEY: <+secrets.getValue("wandb_api_key")>
+                        command: python stream_metrics.py
+
+                  # 7.b — Human approval gate
+                  - stepGroup:
+                      identifier: ApprovalBranch
+                      name: ApprovalBranch
+                      steps:
+
+                        - step:
+                            identifier: Step7AwaitApproval
+                            name: Step7AwaitApproval
+                            type: HarnessApproval
+                            timeout: 24h
+                            spec:
+                              approvalMessage: |
+                                Training run `<+pipeline.variables.trainingRunId>`
+                                is in progress on `<+stages.Train.spec.execution.steps.Step4ProvisionBackend.output.outputVariables.backend>`.
+
+                                Approve  — stop training now, save current checkpoint, then run eval + tag.
+                                Reject   — abort, nothing saved or tagged.
+                                No action — training runs to natural completion; pipeline continues automatically.
+                              includePipelineExecutionHistory: true
+                              approvers:
+                                userGroups:
+                                  - <+pipeline.variables.approvalUserGroup>
+                                minimumCount: 1
+                                disallowPipelineExecutor: false
+                              approverInputs: []
+                            # 7.1 (natural finish): approver never acts → timeout → MarkAsSuccess
+                            # so the parallel block can close.
+                            failureStrategies:
+                              - onFailure:
+                                  errors:
+                                    - ApprovalRejection
+                                    - Timeout
+                                  action:
+                                    type: MarkAsSuccess
+
+                        - step:
+                            identifier: Step7SignalSupervisor
+                            name: Step7SignalSupervisor
+                            type: Run
+                            spec:
+                              connectorRef: account.dockerhub
+                              image: python:3.11-slim
+                              shell: Bash
+                              envVariables:
+                                APPROVAL_STATUS: <+steps.Step7AwaitApproval.status>
+                              command: bash signal_supervisor.sh
+
+              # ── Classify Step 7 outcome → single output var for downstream ──
+              - step:
+                  identifier: Step7ClassifyOutcome
+                  name: Step7ClassifyOutcome
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    command: python classify_outcome.py
+                    outputVariables:
+                      - name: outcome
+                      - name: checkpoint
+
+              # ── Tear down the provider machine ASAP (stop the meter) ──
+              - step:
+                  identifier: TeardownBackend
+                  name: TeardownBackend
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    command: python teardown.py
+
+    # ════════════════════════════════════════════════════════════════════
+    # STAGE 3 — Persist model     (README Step 8)
+    # ════════════════════════════════════════════════════════════════════
+    - stage:
+        name: PersistModel
+        identifier: PersistModel
+        type: CI
+        when:
+          pipelineStatus: Success
+          condition: <+stages.Train.spec.execution.steps.Step7ClassifyOutcome.output.outputVariables.outcome> != "rejected"
+        spec:
+          cloneCodebase: false
+          infrastructure:
+            useFromStage: Validate
+          sharedPaths:
+            - /shared
+          execution:
+            steps:
+              - step:
+                  identifier: Step8StoreModel
+                  name: Step8StoreModel
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      CHECKPOINT:    <+stages.Train.spec.execution.steps.Step7ClassifyOutcome.output.outputVariables.checkpoint>
+                      RUN_ID:        <+pipeline.variables.trainingRunId>
+                      HF_TOKEN:      <+secrets.getValue("hf_token")>
+                      IDRIVE_KEY:    <+secrets.getValue("idrive_access_key")>
+                      IDRIVE_SECRET: <+secrets.getValue("idrive_secret_key")>
+                    command: python store_artifact.py
+
+    # ════════════════════════════════════════════════════════════════════
+    # STAGE 4 — Evaluate          (README Steps 9, 10)
+    # ════════════════════════════════════════════════════════════════════
+    - stage:
+        name: Evaluate
+        identifier: Evaluate
+        type: CI
+        when:
+          pipelineStatus: Success
+          condition: |
+            <+stages.Train.spec.execution.steps.Step7ClassifyOutcome.output.outputVariables.outcome> == "completed"
+            || <+stages.Train.spec.execution.steps.Step7ClassifyOutcome.output.outputVariables.outcome> == "approved"
+        spec:
+          cloneCodebase: false
+          infrastructure:
+            useFromStage: Validate
+          sharedPaths:
+            - /shared
+          execution:
+            steps:
+              - step:
+                  identifier: Step9RunTest
+                  name: Step9RunTest
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      CHECKPOINT: <+stages.Train.spec.execution.steps.Step7ClassifyOutcome.output.outputVariables.checkpoint>
+                      SPLITS_DIR: <+stages.Validate.spec.execution.steps.Step3SplitData.output.outputVariables.splits_dir>
+                    command: python run_eval.py
+
+              - step:
+                  identifier: Step10StoreResults
+                  name: Step10StoreResults
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      RUN_ID: <+pipeline.variables.trainingRunId>
+                    command: python store_results.py
+
+    # ════════════════════════════════════════════════════════════════════
+    # STAGE 5 — Tag version       (README Step 11)
+    # ════════════════════════════════════════════════════════════════════
+    - stage:
+        name: TagVersion
+        identifier: TagVersion
+        type: CI
+        when:
+          pipelineStatus: Success
+          condition: <+stages.Train.spec.execution.steps.Step7ClassifyOutcome.output.outputVariables.outcome> != "rejected"
+        spec:
+          cloneCodebase: false
+          infrastructure:
+            useFromStage: Validate
+          sharedPaths:
+            - /shared
+          execution:
+            steps:
+              - step:
+                  identifier: Step11GitTag
+                  name: Step11GitTag
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: alpine/git:latest
+                    shell: Sh
+                    envVariables:
+                      GH_TOKEN:         <+secrets.getValue("github_pat")>
+                      MANIFEST_VERSION: <+stages.Validate.spec.execution.steps.ParseManifest.output.outputVariables.manifest_version>
+                      RUN_ID:           <+pipeline.variables.trainingRunId>
+                      REPO_URL:         <+codebase.repoUrl>
+                    command: sh git_tag.sh
+
+  failureStrategies:
+    - onFailure:
+        errors:
+          - AllErrors
+        action:
+          type: StageRollback
