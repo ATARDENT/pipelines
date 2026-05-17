@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Step 3: run the dataset's pre-rules validate script against raw files.
+# Step 5: run the dataset's pre-rules validate script against raw files.
 
 # shellcheck source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -7,23 +7,8 @@ source "$(dirname "$0")/lib/common.sh"
 banner "Pre-validate raw dataset"
 activate_venv
 
-# --- TEMP DEBUG: show what's actually on disk ----------------------------
-log "PWD=$PWD"
-log "DATASET_DIR=$DATASET_DIR"
-log "----- top level of DATASET_DIR -----"
-ls -la "$DATASET_DIR" || true
-log "----- scripts/ subtree (if present) -----"
-if [[ -d "$DATASET_DIR/scripts" ]]; then
-  find "$DATASET_DIR/scripts" -maxdepth 4 -print
-else
-  log "(no scripts/ directory at \$DATASET_DIR)"
-fi
-log "----- git state of DATASET_DIR -----"
-( cd "$DATASET_DIR" && git rev-parse HEAD 2>/dev/null && git log -1 --stat 2>/dev/null ) || log "(not a git repo or git not available)"
-log "----- end debug -----"
-# -------------------------------------------------------------------------
-
 [[ -d "$DATASET_DIR" ]] || die "DATASET_DIR ($DATASET_DIR) missing — did acquire run?"
+[[ -f "$DATASET_DIR/manifest.yaml" ]] || die "manifest.yaml not found in $DATASET_DIR"
 
 enabled="$(read_config steps.pre-rules.enabled true)"
 if [[ "$enabled" != "true" ]]; then
