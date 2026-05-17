@@ -26,15 +26,18 @@ pipeline:
           execution:
             steps:
               - step:
-                  type: Run
+                  type: GitClone
                   name: Clone pipeline scripts
                   identifier: clone_pipeline_scripts
                   spec:
-                    shell: Bash
-                    command: |
-                      git clone --depth 1 --branch main \
-                        "git@github.com:ATARDENT/pipelines.git" \
-                        "$PWD/pipeline-scripts"
+                    connectorRef: githubconnector
+                    repoName: pipelines
+                    cloneDirectory: ./pipeline-scripts
+                    build:
+                      type: branch
+                      spec:
+                        branch: main
+                    depth: 1
                   failureStrategies:
                     - onFailure:
                         errors:
