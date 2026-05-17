@@ -11,8 +11,11 @@ die()  { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 #   PIPELINE_ROOT  — checkout of THIS repo, scoped to shifu/data-ci
 #                    (Step 0 clones the whole monorepo into ./pipeline-scripts;
 #                     the data-ci tree lives at pipeline-scripts/shifu/data-ci)
-#   DATASET_DIR    — clone of the user's dataset repo at the requested branch
-#                    (Harness CI Codebase clones it to $PWD)
+#   DATASET_DIR    — clone of the user's dataset repo. Harness's GitClone step
+#                    appears to ignore cloneDirectory when the cloned repo
+#                    matches the default codebase, so the dataset ends up at
+#                    the workspace root alongside pipeline-scripts/ and .venv/.
+#                    That's fine — they don't collide.
 #   VENV_DIR       — Python venv created in setup_env.sh and reused after
 export PIPELINE_ROOT="${PIPELINE_ROOT:-$PWD/pipeline-scripts/shifu/data-ci}"
 export DATASET_DIR="${DATASET_DIR:-$PWD}"
