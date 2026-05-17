@@ -1,43 +1,21 @@
 #!/usr/bin/env bash
-# Step 2: clone the user-chosen dataset repo at the user-chosen branch,
-# then run its `dataset/download.py` to acquire any remote raw files.
+# Step 2: Prepare the dataset workspace.
 #
-# Required env (injected by the pipeline):
-#   DATASET_REPO     e.g. "your-org/instruction-tune-v1" or full URL
-#   DATASET_BRANCH   e.g. "main"
-#   GITHUB_TOKEN     PAT with read access (optional for public repos)
+# The dataset repo is ALREADY cloned by Harness (CI Codebase) into
+# $HARNESS_WORKSPACE / $DATASET_DIR. This script just:
+#   1. Sets git identity for the commit + tag that publish.sh will make later.
+#   2. Verifies the repo follows the data-template layout.
+#   3. Installs the dataset's requirements.txt if present.
+#   4. Runs the dataset's own dataset/download.py to fetch remote raw files.
 
 # shellcheck source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
 
-banner "Acquire dataset repo: ${DATASET_REPO} @ ${DATASET_BRANCH}"
+banner "Prepare dataset workspace at $DATASET_DIR"
 
-[[ -n "${DATASET_REPO:-}" ]]   || die "DATASET_REPO is not set"
-[[ -n "${DATASET_BRANCH:-}" ]] || die "DATASET_BRANCH is not set"
+[[ -d "$DATASET_DIR" ]] || die "DATASET_DIR ($DATASET_DIR) not found — is the codebase clone configured?"
 
-# Accept either "org/name" or a full URL.
-if [[ "$DATASET_REPO" == http*://* ]]; then
-  repo_url="$DATASET_REPO"
-else
-  repo_url="https://github.com/${DATASET_REPO}.git"
-fi
-
-# Insert token for private repos, if provided.
-if [[ -n "${GITHUB_TOKEN:-}" && "$repo_url" == https://github.com/* ]]; then
-  authed_url="${repo_url/https:\/\//https://x-access-token:${GITHUB_TOKEN}@}"
-else
-  authed_url="$repo_url"
-fi
-
-if [[ -d "$DATASET_DIR" ]]; then
-  log "Removing previous clone at $DATASET_DIR"
-  rm -rf "$DATASET_DIR"
-fi
-
-log "Cloning $repo_url (branch $DATASET_BRANCH)"
-git clone --depth 1 --branch "$DATASET_BRANCH" "$authed_url" "$DATASET_DIR"
-
-# Configure git identity for later commits/tags.
+# Configure git identity for later commits/tags from publish.sh.
 git -C "$DATASET_DIR" config user.email "${GIT_AUTHOR_EMAIL:-harness-bot@example.com}"
 git -C "$DATASET_DIR" config user.name  "${GIT_AUTHOR_NAME:-harness-bot}"
 
@@ -50,17 +28,18 @@ for required in dataset/source.yaml dataset/download.py configuration.yaml \
 done
 log "Repo layout OK"
 
-# Install dataset deps now that we have them.
+# Install dataset-specific Python deps.
 if [[ -f "$DATASET_DIR/requirements.txt" ]]; then
   activate_venv
   log "Installing $DATASET_DIR/requirements.txt"
   python -m pip install --quiet -r "$DATASET_DIR/requirements.txt"
 fi
 
-# Run the dataset's own download script. For inline GitHub datasets this is a
-# verification pass; for remote datasets it actually fetches.
+# Run the dataset's own download script. For inline (location: github) datasets
+# this is a verification pass; for remote (location: remote) datasets it
+# actually fetches the raw files.
 activate_venv
 banner "Run dataset/download.py"
 ( cd "$DATASET_DIR" && python dataset/download.py )
 
-log "Acquire OK"
+log "Prepare OK"
