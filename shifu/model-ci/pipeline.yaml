@@ -34,13 +34,6 @@ pipeline:
         type: CI
         spec:
           cloneCodebase: true
-          infrastructure:
-            type: VM
-            spec:
-              type: Pool
-              spec:
-                poolName: <+pipeline.variables.vmPoolName>
-                os: Linux
           sharedPaths:
             - /shared
           execution:
@@ -122,6 +115,12 @@ pipeline:
                     command: python run_split.py
                     outputVariables:
                       - name: splits_dir
+          platform:
+            os: Linux
+            arch: Arm64
+          runtime:
+            type: Docker
+            spec: {}
     - parallel:
         - stage:
             name: Train
