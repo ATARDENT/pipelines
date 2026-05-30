@@ -19,10 +19,6 @@ pipeline:
       type: String
       description: Unique ID for this run — embedded in checkpoint paths
       value: <+pipeline.executionId>
-    - name: vmPoolName
-      type: String
-      description: Name of the Harness VM Pool (Linux AMD64) configured on the delegate
-      value: <+input>.default("linux-amd64-pool")
   stages:
     - stage:
         name: Validate
