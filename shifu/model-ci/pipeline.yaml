@@ -45,7 +45,7 @@ pipeline:
                   name: ParseManifest
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     command: python parse_manifest.py
@@ -57,7 +57,7 @@ pipeline:
                   name: ValidateScriptsCompile
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     command: bash validate_scripts_compile.sh
@@ -66,7 +66,7 @@ pipeline:
                   name: ValidateScriptsLint
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     command: bash validate_scripts_lint.sh
@@ -75,7 +75,7 @@ pipeline:
                   name: ValidateScriptsDryRun
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     command: python validate_scripts_dry_run.py
