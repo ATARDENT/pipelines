@@ -34,7 +34,7 @@ pipeline:
             steps:
               - step:
                   identifier: ParseManifest
-                  name: ParseManifest
+                  name: Parse Manifest
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -53,7 +53,7 @@ pipeline:
                       - name: dataset_deputy
               - step:
                   identifier: ValidateScriptsCompile
-                  name: ValidateScriptsCompile
+                  name: Validate Scripts Compile
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -62,7 +62,7 @@ pipeline:
                     command: bash validate_scripts_compile.sh
               - step:
                   identifier: ValidateScriptsLint
-                  name: ValidateScriptsLint
+                  name: Validate Scripts Lint
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -71,7 +71,7 @@ pipeline:
                     command: bash validate_scripts_lint.sh
               - step:
                   identifier: ValidateScriptsDryRun
-                  name: ValidateScriptsDryRun
+                  name: Validate Scripts Dry Run
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -80,7 +80,7 @@ pipeline:
                     command: python validate_scripts_dry_run.py
               - step:
                   identifier: Step1CloneDataset
-                  name: Step1CloneDataset
+                  name: Step 1 - CloneDataset
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -101,7 +101,7 @@ pipeline:
                       - name: dataset_path
               - step:
                   identifier: Step2ValidateDataset
-                  name: Step2ValidateDataset
+                  name: Step 2 - Validate Dataset
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -112,7 +112,7 @@ pipeline:
                     command: python validate_dataset.py
               - step:
                   identifier: Step3SplitData
-                  name: Step3SplitData
+                  name: Step 3 - Split Data
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -157,7 +157,7 @@ pipeline:
                 steps:
                   - step:
                       identifier: Step4ProvisionBackend
-                      name: Step4ProvisionBackend
+                      name: Step 4 - Provision Backend
                       type: Run
                       spec:
                         connectorRef: dockerhubconnector
@@ -183,7 +183,7 @@ pipeline:
                           - name: backend
                   - step:
                       identifier: Step5ResumeCheck
-                      name: Step5ResumeCheck
+                      name: Step 5 - Resume Check
                       type: Run
                       spec:
                         connectorRef: dockerhubconnector
@@ -201,7 +201,7 @@ pipeline:
                           - name: resume_from
                   - step:
                       identifier: Step6Supervisor
-                      name: Step6Supervisor
+                      name: Step 6 - Supervisor
                       type: Run
                       timeout: 25h
                       spec:
@@ -222,7 +222,7 @@ pipeline:
                         command: python train_supervisor.py
                   - step:
                       identifier: Step6ClassifyTraining
-                      name: Step6ClassifyTraining
+                      name: Step 6 - ClassifyTraining
                       type: Run
                       spec:
                         connectorRef: dockerhubconnector
@@ -241,7 +241,7 @@ pipeline:
                           - name: checkpoint
                   - step:
                       identifier: TeardownBackend
-                      name: TeardownBackend
+                      name: Teardown Backend
                       type: Run
                       spec:
                         connectorRef: dockerhubconnector
@@ -257,7 +257,7 @@ pipeline:
                 steps:
                   - step:
                       identifier: Step7AwaitApproval
-                      name: Step7AwaitApproval
+                      name: Step 7 - Await Approval
                       type: HarnessApproval
                       timeout: 25h
                       spec:
@@ -304,7 +304,7 @@ pipeline:
             steps:
               - step:
                   identifier: Step8StoreModel
-                  name: Step8StoreModel
+                  name: Step 8 - Store Model
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -342,7 +342,7 @@ pipeline:
             steps:
               - step:
                   identifier: Step9RunTest
-                  name: Step9RunTest
+                  name: Step 9 - Run Test
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -354,7 +354,7 @@ pipeline:
                     command: python run_eval.py
               - step:
                   identifier: Step10StoreResults
-                  name: Step10StoreResults
+                  name: Step 10 - Store Results
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
@@ -386,7 +386,7 @@ pipeline:
             steps:
               - step:
                   identifier: Step11GitTag
-                  name: Step11GitTag
+                  name: Step 11 - Git Tag
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
