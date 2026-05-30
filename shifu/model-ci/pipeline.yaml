@@ -19,10 +19,6 @@ pipeline:
       type: String
       description: Unique ID for this run — embedded in checkpoint paths
       value: <+pipeline.executionId>
-    - name: approvalUserGroup
-      type: String
-      description: Harness user group authorised to approve interrupts
-      value: <+input>.default("account._account_all_users")
     - name: vmPoolName
       type: String
       description: Name of the Harness VM Pool (Linux AMD64) configured on the delegate
@@ -278,7 +274,7 @@ pipeline:
                         includePipelineExecutionHistory: true
                         approvers:
                           userGroups:
-                            - <+pipeline.variables.approvalUserGroup>
+                            - account._account_all_users
                           minimumCount: 1
                           disallowPipelineExecutor: false
                         approverInputs: []
