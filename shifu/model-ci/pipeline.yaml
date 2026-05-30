@@ -84,8 +84,8 @@ pipeline:
                   name: Step1CloneDataset
                   type: Run
                   spec:
-                    connectorRef: account.your_internal_registry
-                    image: internal/ci-tools:latest
+                    connectorRef: dockerhubconnector
+                    image: python:3.11-slim
                     shell: Bash
                     envVariables:
                       DEPUTY_UUID: <+steps.ParseManifest.output.outputVariables.dataset_deputy>
