@@ -4,7 +4,7 @@ pipeline:
   projectIdentifier: Project_Shifu
   orgIdentifier: default
   description: |-
-    Standalone deploy pipeline. Resolves a trained model by run_id (from R2 via a presigned URL, or from HuggingFace), provisions a runtime through mlrunner, and KEEPS IT ALIVE serving an HTTP endpoint (keep-up: no teardown on success). deployTarget chooses the backend:
+    Standalone deploy pipeline. Resolves a trained model by run_id (from R2 via a presigned URL, or from HuggingFace), provisions a runtime through mlrunner, and KEEPS IT ALIVE serving an HTTP endpoint (keep-up: no teardown on success). Single stage so all steps share one workspace (clone + submodule + scripts). deployTarget chooses the backend:
       cpu-ondemand -> ColabBackend, CPU-only, always-available (current default)
       gpu-spot     -> SkyPilotBackend on a spot/interruptible GPU (cheap, preemptible)
   properties:
@@ -44,8 +44,8 @@ pipeline:
       value: <+input>.default("false")
   stages:
     - stage:
-        name: Validate
-        identifier: Validate
+        name: Deploy
+        identifier: Deploy
         type: CI
         spec:
           cloneCodebase: true
@@ -81,24 +81,6 @@ pipeline:
                       # Fast gate — unit + simulated, no Colab credentials touched.
                       pytest tests/ --ignore=tests/integration/test_colab_e2e.py -q
                       python main.py --infra simulated
-          platform:
-            os: Linux
-            arch: Amd64
-          runtime:
-            type: Docker
-            spec: {}
-    - stage:
-        name: Deploy
-        identifier: Deploy
-        type: CI
-        spec:
-          cloneCodebase: false
-          infrastructure:
-            useFromStage: Validate
-          sharedPaths:
-            - /shared
-          execution:
-            steps:
               - step:
                   identifier: FetchModel
                   name: FetchModel
@@ -119,10 +101,14 @@ pipeline:
                     command: |
                       set -euo pipefail
                       pip install boto3 huggingface_hub -q
-                      # run_id -> downloadable URL. For R2 this is a short-lived presigned GET
-                      # (no creds reach the runtime). Prints ONLY the URL.
-                      export model_url="$(python ci/fetch_model.py)"
-                      echo "Resolved model_url for run_id=${MODEL_RUN_ID}"
+                      # Plain assignment (not `export x=$(...)`) so set -e aborts here
+                      # if fetch_model.py exits non-zero, instead of silently continuing.
+                      model_url="$(python ci/fetch_model.py)"
+                      if [ -z "$model_url" ]; then
+                        echo "fetch_model.py produced no URL" >&2; exit 1
+                      fi
+                      export model_url
+                      echo "Resolved model_url (run_id=${MODEL_RUN_ID:-n/a}, source=${MODEL_SOURCE:-r2})"
                     outputVariables:
                       - name: model_url
               - step:
@@ -198,3 +184,9 @@ pipeline:
                     outputVariables:
                       - name: endpoint_url
                       - name: server_name
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
