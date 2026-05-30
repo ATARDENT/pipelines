@@ -35,7 +35,7 @@ pipeline:
         spec:
           cloneCodebase: true
           delegateSelectors:
-            - linux-arm64
+            - linux-amd64
           sharedPaths:
             - /shared
           execution:
