@@ -153,14 +153,14 @@ pipeline:
               cloneCodebase: true
               delegateSelectors:
                 - linux-amd64
+              sharedPaths:
+                - /tmp/shared
               platform:
                 os: Linux
                 arch: Amd64
               runtime:
                 type: Docker
                 spec: {}
-              sharedPaths:
-                - /shared
               execution:
                 steps:
                   - step:
@@ -307,7 +307,7 @@ pipeline:
             type: Docker
             spec: {}
           sharedPaths:
-            - /shared
+            - /tmp/shared
           execution:
             steps:
               - step:
@@ -345,7 +345,7 @@ pipeline:
             type: Docker
             spec: {}
           sharedPaths:
-            - /shared
+            - /tmp/shared
           execution:
             steps:
               - step:
@@ -389,7 +389,7 @@ pipeline:
             type: Docker
             spec: {}
           sharedPaths:
-            - /shared
+            - /tmp/shared
           execution:
             steps:
               - step:
