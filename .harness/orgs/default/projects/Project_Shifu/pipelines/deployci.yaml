@@ -21,7 +21,7 @@ pipeline:
     - name: modelSource
       type: String
       description: Where to pull the model from — "r2" (presigned, default) or "hf".
-      value: <+input>.default("r2")
+      value: <+input>.default("r2").allowedValues(r2, hf)
     - name: hfRepoId
       type: String
       description: HuggingFace repo id (org/name). Required only when modelSource == "hf".
@@ -49,7 +49,7 @@ pipeline:
     - name: highRam
       type: String
       description: Request high-RAM runtime (cpu-ondemand / Colab only).
-      value: <+input>.default("false")
+      value: <+input>.default("false").allowedValues(false, true)
     - name: replaceExisting
       type: String
       description: cpu-ondemand only. Colab allows ONE server per account, so a new endpoint can't coexist with the old one. "false" (default) PROTECTS a live endpoint — the run aborts instead of killing it. "true" tears down the existing server first, then provisions the new one (brief downtime during the swap).
