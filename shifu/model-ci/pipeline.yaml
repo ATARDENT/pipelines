@@ -118,7 +118,7 @@ pipeline:
                     outputVariables:
                       - name: splits_dir
           platform:
-            os: Linux
+            os: MacOS
             arch: Arm64
           runtime:
             type: Docker
