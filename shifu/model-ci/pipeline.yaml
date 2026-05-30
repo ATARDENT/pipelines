@@ -37,7 +37,7 @@ pipeline:
           delegateSelectors:
             - linux-amd64
           sharedPaths:
-            - /shared
+            - /tmp/shared
           execution:
             steps:
               - step:
@@ -118,8 +118,8 @@ pipeline:
                     outputVariables:
                       - name: splits_dir
           platform:
-            os: MacOS
-            arch: Arm64
+            os: Linux
+            arch: Amd64
           runtime:
             type: Docker
             spec: {}
