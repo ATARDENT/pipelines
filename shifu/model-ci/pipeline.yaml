@@ -22,7 +22,7 @@ pipeline:
     - name: approvalUserGroup
       type: String
       description: Harness user group authorised to approve interrupts
-      value: <+input>.default("account.ml_reviewers")
+      value: <+input>.default("account._account_all_users")
     - name: vmPoolName
       type: String
       description: Name of the Harness VM Pool (Linux AMD64) configured on the delegate
