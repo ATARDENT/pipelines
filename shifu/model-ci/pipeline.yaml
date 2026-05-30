@@ -192,7 +192,7 @@ pipeline:
                       name: Step6ClassifyTraining
                       type: Run
                       spec:
-                        connectorRef: account.dockerhub
+                        connectorRef: dockerhubconnector
                         image: python:3.11-slim
                         shell: Bash
                         command: python classify_outcome.py
@@ -204,7 +204,7 @@ pipeline:
                       name: TeardownBackend
                       type: Run
                       spec:
-                        connectorRef: account.dockerhub
+                        connectorRef: dockerhubconnector
                         image: python:3.11-slim
                         shell: Bash
                         command: python teardown.py
@@ -293,7 +293,7 @@ pipeline:
                   name: Step9RunTest
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
@@ -305,7 +305,7 @@ pipeline:
                   name: Step10StoreResults
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
