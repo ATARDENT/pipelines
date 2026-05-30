@@ -139,9 +139,12 @@ pipeline:
                         echo "Stale Colab server found — removing."
                         colab-cli --quiet server rm || true
                       fi
-                      python ci/serve_model.py > /tmp/serve.out
-                      cat /tmp/serve.out
-                      set -a; . /tmp/serve.out; set +a
+                      python ci/serve_model.py | tee /tmp/serve.out
+                      # serve_model.py prints endpoint_url/server_name on stdout, but
+                      # mlrunner also writes upload chatter there (e.g. a "✓ ... → ..."
+                      # line) — so source ONLY the key=value lines, not the whole stream.
+                      grep -E '^(endpoint_url|server_name)=' /tmp/serve.out > /tmp/serve.env || true
+                      set -a; . /tmp/serve.env; set +a
                     outputVariables:
                       - name: endpoint_url
                       - name: server_name
@@ -178,9 +181,12 @@ pipeline:
                       # SkyPilot reads AWS_* and VAST_API_KEY straight from the env
                       # (no key files) — they're set as envVariables above.
                       # sky check || true   # optional: verify enabled clouds
-                      python ci/serve_model.py > /tmp/serve.out
-                      cat /tmp/serve.out
-                      set -a; . /tmp/serve.out; set +a
+                      python ci/serve_model.py | tee /tmp/serve.out
+                      # serve_model.py prints endpoint_url/server_name on stdout, but
+                      # mlrunner also writes upload chatter there (e.g. a "✓ ... → ..."
+                      # line) — so source ONLY the key=value lines, not the whole stream.
+                      grep -E '^(endpoint_url|server_name)=' /tmp/serve.out > /tmp/serve.env || true
+                      set -a; . /tmp/serve.env; set +a
                     outputVariables:
                       - name: endpoint_url
                       - name: server_name
