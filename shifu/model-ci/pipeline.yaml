@@ -48,7 +48,14 @@ pipeline:
                     connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
-                    command: python parse_manifest.py
+                    command: |
+                      rm -f /tmp/.harness_outputs.env
+                      python parse_manifest.py
+                      if [ -f /tmp/.harness_outputs.env ]; then
+                        set -a
+                        . /tmp/.harness_outputs.env
+                        set +a
+                      fi
                     outputVariables:
                       - name: manifest_version
                       - name: dataset_deputy
@@ -90,7 +97,14 @@ pipeline:
                     envVariables:
                       DEPUTY_UUID: <+steps.ParseManifest.output.outputVariables.dataset_deputy>
                       OVERRIDE_UUID: <+pipeline.variables.datasetDeputyUuid>
-                    command: bash clone_dataset.sh
+                    command: |
+                      rm -f /tmp/.harness_outputs.env
+                      bash clone_dataset.sh
+                      if [ -f /tmp/.harness_outputs.env ]; then
+                        set -a
+                        . /tmp/.harness_outputs.env
+                        set +a
+                      fi
                     outputVariables:
                       - name: dataset_path
               - step:
@@ -114,7 +128,14 @@ pipeline:
                     shell: Bash
                     envVariables:
                       DATASET_PATH: <+steps.Step1CloneDataset.output.outputVariables.dataset_path>
-                    command: python run_split.py
+                    command: |
+                      rm -f /tmp/.harness_outputs.env
+                      python run_split.py
+                      if [ -f /tmp/.harness_outputs.env ]; then
+                        set -a
+                        . /tmp/.harness_outputs.env
+                        set +a
+                      fi
                     outputVariables:
                       - name: splits_dir
           platform:
@@ -151,7 +172,14 @@ pipeline:
                           AWS_ACCESS_KEY_ID: <+secrets.getValue("aws_access_key")>
                           AWS_SECRET_ACCESS_KEY: <+secrets.getValue("aws_secret_key")>
                           THUNDER_API_KEY: <+secrets.getValue("thundercompute_api_key")>
-                        command: python provision.py
+                        command: |
+                          rm -f /tmp/.harness_outputs.env
+                          python provision.py
+                          if [ -f /tmp/.harness_outputs.env ]; then
+                            set -a
+                            . /tmp/.harness_outputs.env
+                            set +a
+                          fi
                         outputVariables:
                           - name: instance_id
                           - name: backend
@@ -163,7 +191,14 @@ pipeline:
                         connectorRef: dockerhubconnector
                         image: python:3.11-slim
                         shell: Bash
-                        command: python find_checkpoint.py
+                        command: |
+                          rm -f /tmp/.harness_outputs.env
+                          python find_checkpoint.py
+                          if [ -f /tmp/.harness_outputs.env ]; then
+                            set -a
+                            . /tmp/.harness_outputs.env
+                            set +a
+                          fi
                         outputVariables:
                           - name: resume_from
                   - step:
@@ -195,7 +230,14 @@ pipeline:
                         connectorRef: dockerhubconnector
                         image: python:3.11-slim
                         shell: Bash
-                        command: python classify_outcome.py
+                        command: |
+                          rm -f /tmp/.harness_outputs.env
+                          python classify_outcome.py
+                          if [ -f /tmp/.harness_outputs.env ]; then
+                            set -a
+                            . /tmp/.harness_outputs.env
+                            set +a
+                          fi
                         outputVariables:
                           - name: training_state
                           - name: checkpoint
