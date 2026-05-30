@@ -33,6 +33,25 @@ pipeline:
           execution:
             steps:
               - step:
+                  identifier: ResetWorkspace
+                  name: ResetWorkspace
+                  type: Run
+                  spec:
+                    connectorRef: dockerhubconnector
+                    image: python:3.11-slim
+                    shell: Bash
+                    command: |
+                      rm -rf /tmp/shared/checkpoints \
+                             /tmp/shared/splits \
+                             /tmp/shared/dataset \
+                             /tmp/shared/artifacts \
+                             /tmp/shared/training_status.json \
+                             /tmp/shared/server_state.json \
+                             /tmp/shared/eval_metrics.json
+                      mkdir -p /tmp/shared
+                      echo "✓ workspace cleaned"
+                      ls -la /tmp/shared
+              - step:
                   identifier: ParseManifest
                   name: Parse Manifest
                   type: Run
