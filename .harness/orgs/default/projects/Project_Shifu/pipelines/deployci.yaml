@@ -1,0 +1,195 @@
+pipeline:
+  name: model-deploy
+  identifier: model_deploy
+  projectIdentifier: Project_Shifu
+  orgIdentifier: default
+  description: |-
+    Standalone deploy pipeline. Resolves a trained model by run_id (from R2 via a presigned URL, or from HuggingFace), provisions a runtime through mlrunner, and KEEPS IT ALIVE serving an HTTP endpoint (keep-up: no teardown on success). deployTarget chooses the backend:
+      cpu-ondemand -> ColabBackend, CPU-only, always-available (current default)
+      gpu-spot     -> SkyPilotBackend on a spot/interruptible GPU (cheap, preemptible)
+  properties:
+    ci:
+      codebase:
+        connectorRef: <+input>
+        repoName: <+input>
+        build: <+input>
+  variables:
+    - name: modelRunId
+      type: String
+      description: run_id of the trained model to deploy (matches models/<run_id>/ in R2).
+      value: <+input>
+    - name: modelSource
+      type: String
+      description: Where to pull the model from — "r2" (presigned, default) or "hf".
+      value: <+input>.default("r2")
+    - name: hfRepoId
+      type: String
+      description: HuggingFace repo id (org/name). Required only when modelSource == "hf".
+      value: <+input>.default("")
+    - name: deployTarget
+      type: String
+      description: "cpu-ondemand = always-available Colab CPU runtime (current behaviour); gpu-spot = SkyPilot on a spot/interruptible GPU — cheap, but PREEMPTIBLE (the endpoint can be killed with little/no notice: Spheron ~30s, Vast a few min)."
+      value: <+input>.default("cpu-ondemand").allowedValues(cpu-ondemand, gpu-spot)
+    - name: gpuType
+      type: String
+      description: GPU for gpu-spot (e.g. A100, H100, RTX4090). Ignored for cpu-ondemand.
+      value: <+input>.default("A100")
+    - name: spotProvider
+      type: String
+      description: Optional SkyPilot cloud/provider hint for gpu-spot (e.g. vast, aws). "" = let SkyPilot decide.
+      value: <+input>.default("")
+    - name: highRam
+      type: String
+      description: Request high-RAM runtime (cpu-ondemand / Colab only).
+      value: <+input>.default("false")
+  stages:
+    - stage:
+        name: Validate
+        identifier: Validate
+        type: CI
+        spec:
+          cloneCodebase: true
+          delegateSelectors:
+            - linux-amd64
+          sharedPaths:
+            - /shared
+          execution:
+            steps:
+              - step:
+                  identifier: InitAndTest
+                  name: InitAndTest
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      GH_TOKEN: <+secrets.getValue("GITHUB_COLAB_SDK_PAT")>
+                    command: |
+                      set -euo pipefail
+                      apt-get update -qq && apt-get install -y -qq git >/dev/null
+                      # colab-sdk is a PRIVATE git submodule. Authenticate over HTTPS with the PAT.
+                      git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
+                      git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                      git submodule update --init --recursive
+                      pip install -e '.[dev]' -e './colab-sdk' -q
+                      # Fast gate — unit + simulated, no Colab credentials touched.
+                      pytest tests/ --ignore=tests/integration/test_colab_e2e.py -q
+                      python main.py --infra simulated
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
+    - stage:
+        name: Deploy
+        identifier: Deploy
+        type: CI
+        spec:
+          cloneCodebase: false
+          infrastructure:
+            useFromStage: Validate
+          sharedPaths:
+            - /shared
+          execution:
+            steps:
+              - step:
+                  identifier: FetchModel
+                  name: FetchModel
+                  type: Run
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      MODEL_RUN_ID: <+pipeline.variables.modelRunId>
+                      MODEL_SOURCE: <+pipeline.variables.modelSource>
+                      HF_REPO_ID: <+pipeline.variables.hfRepoId>
+                      R2_ACCOUNT_ID: <+secrets.getValue("R2_ACCOUNT_ID")>
+                      R2_ACCESS_KEY_ID: <+secrets.getValue("R2_ACCESS_KEY")>
+                      R2_SECRET_ACCESS_KEY: <+secrets.getValue("R2_SECRET_KEY")>
+                      R2_BUCKET: <+secrets.getValue("R2_BUCKET")>
+                      HF_TOKEN: <+secrets.getValue("HUGGINGFACE_READ_TOKEN")>
+                    command: |
+                      set -euo pipefail
+                      pip install boto3 huggingface_hub -q
+                      # run_id -> downloadable URL. For R2 this is a short-lived presigned GET
+                      # (no creds reach the runtime). Prints ONLY the URL.
+                      export model_url="$(python ci/fetch_model.py)"
+                      echo "Resolved model_url for run_id=${MODEL_RUN_ID}"
+                    outputVariables:
+                      - name: model_url
+              - step:
+                  identifier: ServeColab
+                  name: ServeColab
+                  type: Run
+                  timeout: 30m
+                  when:
+                    stageStatus: Success
+                    condition: <+pipeline.variables.deployTarget> == "cpu-ondemand"
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: atardent/mlrunner-ci:latest
+                    shell: Bash
+                    envVariables:
+                      DEPLOY_TARGET: cpu-ondemand
+                      COLAB_CREDENTIALS_JSON: <+secrets.getValue("COLAB_CREDENTIALS_JSON")>
+                      MODEL_URL: <+steps.FetchModel.output.outputVariables.model_url>
+                      HIGH_RAM: <+pipeline.variables.highRam>
+                      RUN_ID: <+pipeline.variables.modelRunId>
+                    command: |
+                      set -euo pipefail
+                      mkdir -p /root/.local/share/colab-cli
+                      printf '%s' "$COLAB_CREDENTIALS_JSON" > /root/.local/share/colab-cli/credentials.json
+                      pip install -e '.' -e './colab-sdk' -q
+                      # Account allows ONLY ONE assigned Colab server — clear any stale one.
+                      if [ "$(colab-cli --quiet server ls)" != "no_servers" ]; then
+                        echo "Stale Colab server found — removing."
+                        colab-cli --quiet server rm || true
+                      fi
+                      python ci/serve_model.py > /tmp/serve.out
+                      cat /tmp/serve.out
+                      set -a; . /tmp/serve.out; set +a
+                    outputVariables:
+                      - name: endpoint_url
+                      - name: server_name
+              - step:
+                  identifier: ServeSpot
+                  name: ServeSpot
+                  type: Run
+                  timeout: 30m
+                  when:
+                    stageStatus: Success
+                    condition: <+pipeline.variables.deployTarget> == "gpu-spot"
+                  spec:
+                    connectorRef: account.dockerhub
+                    image: atardent/mlrunner-ci:latest
+                    shell: Bash
+                    envVariables:
+                      DEPLOY_TARGET: gpu-spot
+                      MODEL_URL: <+steps.FetchModel.output.outputVariables.model_url>
+                      GPU_TYPE: <+pipeline.variables.gpuType>
+                      SPOT_PROVIDER: <+pipeline.variables.spotProvider>
+                      RUN_ID: <+pipeline.variables.modelRunId>
+                      AWS_ACCESS_KEY_ID: <+secrets.getValue("AWS_ACCESS_KEY")>
+                      AWS_SECRET_ACCESS_KEY: <+secrets.getValue("AWS_SECRET_KEY")>
+                      VAST_API_KEY: <+secrets.getValue("VAST_API_KEY")>
+                    command: |
+                      set -euo pipefail
+                      # Cloud-specific SkyPilot extra — base [skypilot] ships no cloud SDK.
+                      PROVIDER="${SPOT_PROVIDER:-aws}"
+                      case "$PROVIDER" in
+                        vast) EXTRA="skypilot-vast" ;;
+                        *)    EXTRA="skypilot-aws"  ;;
+                      esac
+                      pip install -e ".[${EXTRA}]" -q
+                      # SkyPilot reads AWS_* and VAST_API_KEY straight from the env
+                      # (no key files) — they're set as envVariables above.
+                      # sky check || true   # optional: verify enabled clouds
+                      python ci/serve_model.py > /tmp/serve.out
+                      cat /tmp/serve.out
+                      set -a; . /tmp/serve.out; set +a
+                    outputVariables:
+                      - name: endpoint_url
+                      - name: server_name
