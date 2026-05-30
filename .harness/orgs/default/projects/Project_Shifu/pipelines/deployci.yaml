@@ -6,7 +6,7 @@ pipeline:
   description: |-
     Standalone deploy pipeline. Resolves a trained model by run_id (from R2 via a presigned URL, or from HuggingFace), provisions a runtime through mlrunner, and KEEPS IT ALIVE serving an HTTP endpoint (keep-up: no teardown on success). Single stage so all steps share one workspace (clone + submodule + scripts). deployTarget chooses the backend:
       cpu-ondemand -> ColabBackend, CPU-only, always-available (current default)
-      gpu-spot     -> SkyPilotBackend on a spot/interruptible GPU (cheap, preemptible)
+      gpu-spheron  -> SpheronBackend: SSH into an already-running Spheron GPU instance
   properties:
     ci:
       codebase:
@@ -28,20 +28,36 @@ pipeline:
       value: <+input>.default("")
     - name: deployTarget
       type: String
-      description: "cpu-ondemand = always-available Colab CPU runtime (current behaviour); gpu-spot = SkyPilot on a spot/interruptible GPU — cheap, but PREEMPTIBLE (the endpoint can be killed with little/no notice: Spheron ~30s, Vast a few min)."
-      value: <+input>.default("cpu-ondemand").allowedValues(cpu-ondemand, gpu-spot)
+      description: cpu-ondemand = always-available Colab CPU runtime (current behaviour); gpu-spheron  = SSH into an ALREADY-RUNNING Spheron GPU instance. You must launch the instance in app.spheron.ai first and pass its IP via spheronHost. Teardown CANNOT stop the instance (the backend's teardown is a no-op) — it only kills the endpoint; stop the box yourself in the Spheron dashboard.
+      value: <+input>.default("cpu-ondemand").allowedValues(cpu-ondemand, gpu-spheron)
     - name: gpuType
       type: String
-      description: GPU for gpu-spot (e.g. A100, H100, RTX4090). Ignored for cpu-ondemand.
-      value: <+input>.default("A100")
-    - name: spotProvider
+      description: GPU label for gpu-spheron (e.g. H100, A100). Ignored for cpu-ondemand.
+      value: <+input>.default("H100")
+    - name: spheronHost
       type: String
-      description: Optional SkyPilot cloud/provider hint for gpu-spot (e.g. vast, aws). "" = let SkyPilot decide.
+      description: Public IP of the already-running Spheron GPU instance. REQUIRED when deployTarget == gpu-spheron; ignored otherwise.
+      value: <+input>.default("")
+    - name: spheronUser
+      type: String
+      description: SSH user for the Spheron instance (Spheron defaults to root).
+      value: <+input>.default("root")
+    - name: spheronHourlyRate
+      type: String
+      description: Optional $/hr for local (approximate) cost tracking on gpu-spheron, e.g. "1.33". "" disables cost tracking. Authoritative billing is in the dashboard.
       value: <+input>.default("")
     - name: highRam
       type: String
       description: Request high-RAM runtime (cpu-ondemand / Colab only).
       value: <+input>.default("false")
+    - name: replaceExisting
+      type: String
+      description: cpu-ondemand only. Colab allows ONE server per account, so a new endpoint can't coexist with the old one. "false" (default) PROTECTS a live endpoint — the run aborts instead of killing it. "true" tears down the existing server first, then provisions the new one (brief downtime during the swap).
+      value: <+input>.default("false").allowedValues(false, true)
+    - name: approvalUserGroup
+      type: String
+      description: Harness user group authorised to approve teardown of the live endpoint.
+      value: <+input>.default("account.ml_reviewers")
   stages:
     - stage:
         name: Deploy
@@ -51,8 +67,6 @@ pipeline:
           cloneCodebase: true
           delegateSelectors:
             - linux-amd64
-          sharedPaths:
-            - /shared
           execution:
             steps:
               - step:
@@ -129,15 +143,28 @@ pipeline:
                       MODEL_URL: <+steps.FetchModel.output.outputVariables.model_url>
                       HIGH_RAM: <+pipeline.variables.highRam>
                       RUN_ID: <+pipeline.variables.modelRunId>
+                      REPLACE_EXISTING: <+pipeline.variables.replaceExisting>
                     command: |
                       set -euo pipefail
                       mkdir -p /root/.local/share/colab-cli
                       printf '%s' "$COLAB_CREDENTIALS_JSON" > /root/.local/share/colab-cli/credentials.json
                       pip install -e '.' -e './colab-sdk' -q
-                      # Account allows ONLY ONE assigned Colab server — clear any stale one.
-                      if [ "$(colab-cli --quiet server ls)" != "no_servers" ]; then
-                        echo "Stale Colab server found — removing."
-                        colab-cli --quiet server rm || true
+                      # Colab allows only ONE server per account. Never silently kill a
+                      # live endpoint: abort unless the operator explicitly opts in.
+                      EXISTING="$(colab-cli --quiet server ls)"
+                      if [ "$EXISTING" != "no_servers" ]; then
+                        if [ "${REPLACE_EXISTING:-false}" = "true" ]; then
+                          echo "replaceExisting=true — removing existing server before reprovisioning."
+                          colab-cli --quiet server rm || true
+                        else
+                          echo "ERROR: a Colab server is already assigned ('$EXISTING') and is" >&2
+                          echo "likely still serving. Colab permits only one server per account," >&2
+                          echo "so this run will NOT kill it or start a second one." >&2
+                          echo "Options: keep using the current endpoint; re-run with" >&2
+                          echo "replaceExisting=true to replace it; or run model-deploy-teardown" >&2
+                          echo "(or 'colab-cli --quiet server rm' on the host) to free it." >&2
+                          exit 1
+                        fi
                       fi
                       python ci/serve_model.py | tee /tmp/serve.out
                       # serve_model.py prints endpoint_url/server_name on stdout, but
@@ -149,38 +176,44 @@ pipeline:
                       - name: endpoint_url
                       - name: server_name
               - step:
-                  identifier: ServeSpot
-                  name: ServeSpot
+                  identifier: ServeSpheron
+                  name: ServeSpheron
                   type: Run
                   timeout: 30m
                   when:
                     stageStatus: Success
-                    condition: <+pipeline.variables.deployTarget> == "gpu-spot"
+                    condition: <+pipeline.variables.deployTarget> == "gpu-spheron"
                   spec:
                     connectorRef: dockerhubconnector
                     image: atardent/mlrunner-ci:latest
                     shell: Bash
                     envVariables:
-                      DEPLOY_TARGET: gpu-spot
+                      DEPLOY_TARGET: gpu-spheron
                       MODEL_URL: <+steps.FetchModel.output.outputVariables.model_url>
                       GPU_TYPE: <+pipeline.variables.gpuType>
-                      SPOT_PROVIDER: <+pipeline.variables.spotProvider>
                       RUN_ID: <+pipeline.variables.modelRunId>
-                      AWS_ACCESS_KEY_ID: <+secrets.getValue("AWS_ACCESS_KEY")>
-                      AWS_SECRET_ACCESS_KEY: <+secrets.getValue("AWS_SECRET_KEY")>
-                      VAST_API_KEY: <+secrets.getValue("VAST_API_KEY")>
+                      SPHERON_HOST: <+pipeline.variables.spheronHost>
+                      SPHERON_USER: <+pipeline.variables.spheronUser>
+                      SPHERON_HOURLY_RATE: <+pipeline.variables.spheronHourlyRate>
+                      SPHERON_KEY_PATH: /root/.ssh/id_ed25519
+                      SPHERON_SSH_KEY: <+secrets.getValue("SPHERON_SSH_KEY")>
                     command: |
                       set -euo pipefail
-                      # Cloud-specific SkyPilot extra — base [skypilot] ships no cloud SDK.
-                      PROVIDER="${SPOT_PROVIDER:-aws}"
-                      case "$PROVIDER" in
-                        vast) EXTRA="skypilot-vast" ;;
-                        *)    EXTRA="skypilot-aws"  ;;
-                      esac
-                      pip install -e ".[${EXTRA}]" -q
-                      # SkyPilot reads AWS_* and VAST_API_KEY straight from the env
-                      # (no key files) — they're set as envVariables above.
-                      # sky check || true   # optional: verify enabled clouds
+                      if [ -z "${SPHERON_HOST:-}" ]; then
+                        echo "ERROR: spheronHost is empty. Launch a GPU instance at" >&2
+                        echo "https://app.spheron.ai, then pass its public IP as spheronHost." >&2
+                        exit 1
+                      fi
+                      # Materialise the SSH private key from the Harness secret. The
+                      # backend's paramiko transport reads it via key_filename
+                      # (SPHERON_KEY_PATH) and uses AutoAddPolicy, so there is no
+                      # known_hosts / ssh-keyscan setup to do here.
+                      mkdir -p /root/.ssh && chmod 700 /root/.ssh
+                      printf '%s\n' "$SPHERON_SSH_KEY" > /root/.ssh/id_ed25519
+                      chmod 600 /root/.ssh/id_ed25519
+                      # [spheron] extra pulls paramiko; colab-sdk satisfies top-level
+                      # imports in mlrunner/__init__ (submodule already inited by InitAndTest).
+                      pip install -e '.[spheron]' -e './colab-sdk' -q
                       python ci/serve_model.py | tee /tmp/serve.out
                       # serve_model.py prints endpoint_url/server_name on stdout, but
                       # mlrunner also writes upload chatter there (e.g. a "✓ ... → ..."
@@ -190,6 +223,116 @@ pipeline:
                     outputVariables:
                       - name: endpoint_url
                       - name: server_name
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
+    - stage:
+        name: ApprovalGate
+        identifier: ApprovalGate
+        type: Approval
+        spec:
+          execution:
+            steps:
+              - step:
+                  identifier: AwaitTeardown
+                  name: AwaitTeardown
+                  type: HarnessApproval
+                  timeout: 2h
+                  spec:
+                    approvalMessage: |
+                      A model endpoint is now LIVE (the URL is in the ServeColab /
+                      ServeSpheron step output of the Deploy stage). It serves until you
+                      STOP it here.
+
+                      Approve OR Reject — STOP the endpoint now. Both buttons do the same.
+                      No action         — it is stopped automatically at the timeout.
+
+                      NOTE for gpu-spheron: stopping kills the SERVING PROCESSES only.
+                      The Spheron GPU INSTANCE keeps running and BILLING — you must stop
+                      it yourself in the Spheron dashboard (https://app.spheron.ai).
+                      (cpu-ondemand / Colab: the runtime is fully removed.)
+                    includePipelineExecutionHistory: true
+                    approvers:
+                      userGroups:
+                        - <+pipeline.variables.approvalUserGroup>
+                      minimumCount: 1
+                      disallowPipelineExecutor: false
+                    approverInputs: []
+                  failureStrategies:
+                    - onFailure:
+                        errors:
+                          - ApprovalRejection
+                          - Timeout
+                        action:
+                          type: MarkAsSuccess
+    - stage:
+        name: Teardown
+        identifier: Teardown
+        type: CI
+        when:
+          pipelineStatus: Success
+        spec:
+          cloneCodebase: false
+          delegateSelectors:
+            - linux-amd64
+          execution:
+            steps:
+              - step:
+                  identifier: RemoveServer
+                  name: RemoveServer
+                  type: Run
+                  spec:
+                    connectorRef: dockerhubconnector
+                    image: atardent/mlrunner-ci:latest
+                    shell: Bash
+                    envVariables:
+                      DEPLOY_TARGET: <+pipeline.variables.deployTarget>
+                      COLAB_CREDENTIALS_JSON: <+secrets.getValue("COLAB_CREDENTIALS_JSON")>
+                      SPHERON_HOST: <+pipeline.variables.spheronHost>
+                      SPHERON_USER: <+pipeline.variables.spheronUser>
+                      SPHERON_SSH_KEY: <+secrets.getValue("SPHERON_SSH_KEY")>
+                    command: |
+                      set -euo pipefail
+                      if [ "${DEPLOY_TARGET}" = "gpu-spheron" ]; then
+                        # The backend CANNOT stop a Spheron instance (teardown is a no-op).
+                        # Best effort: SSH in and kill the serving processes so the public
+                        # endpoint goes down. The INSTANCE keeps running until you stop it
+                        # in the dashboard.
+                        if [ -z "${SPHERON_HOST:-}" ]; then
+                          echo "No spheronHost recorded; cannot reach the instance to stop serving." >&2
+                        else
+                          apt-get update -qq && apt-get install -y -qq openssh-client >/dev/null
+                          mkdir -p /root/.ssh && chmod 700 /root/.ssh
+                          printf '%s\n' "$SPHERON_SSH_KEY" > /root/.ssh/id_ed25519
+                          chmod 600 /root/.ssh/id_ed25519
+                          echo "Stopping serving processes on ${SPHERON_HOST} (endpoint goes down)..."
+                          ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
+                              -o ConnectTimeout=15 "${SPHERON_USER:-root}@${SPHERON_HOST}" \
+                              'pkill -f cloudflared || true; pkill -f "uvicorn" || true; pkill -f "app:app" || true; echo "serving stopped"' \
+                            || echo "WARN: could not reach the instance (it may already be stopped)."
+                        fi
+                        echo ""
+                        echo "================= ACTION REQUIRED ================="
+                        echo "The Spheron GPU INSTANCE (${SPHERON_HOST:-unknown}) is STILL RUNNING"
+                        echo "and STILL BILLING. mlrunner cannot deallocate it from here."
+                        echo "Stop it now to stop charges:  https://app.spheron.ai"
+                        echo "=================================================="
+                      else
+                        # cpu-ondemand: Colab — this DOES fully remove the runtime.
+                        mkdir -p /root/.local/share/colab-cli
+                        printf '%s' "$COLAB_CREDENTIALS_JSON" > /root/.local/share/colab-cli/credentials.json
+                        BEFORE="$(colab-cli --quiet server ls)"
+                        echo "Current server: $BEFORE"
+                        if [ "$BEFORE" = "no_servers" ]; then
+                          echo "Nothing to tear down (already gone — e.g. Colab idle timeout)."
+                        else
+                          colab-cli --quiet server rm
+                          echo "Torn down. Now: $(colab-cli --quiet server ls)"
+                        fi
+                      fi
           platform:
             os: Linux
             arch: Amd64
