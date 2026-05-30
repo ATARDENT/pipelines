@@ -150,9 +150,15 @@ pipeline:
             identifier: Train
             type: CI
             spec:
-              cloneCodebase: false
-              infrastructure:
-                useFromStage: Validate
+              cloneCodebase: true
+              delegateSelectors:
+                - linux-amd64
+              platform:
+                os: Linux
+                arch: Amd64
+              runtime:
+                type: Docker
+                spec: {}
               sharedPaths:
                 - /shared
               execution:
@@ -291,9 +297,15 @@ pipeline:
           pipelineStatus: Success
           condition: <+stages.Train.spec.execution.steps.Step6ClassifyTraining.output.outputVariables.training_state> != "rejected"
         spec:
-          cloneCodebase: false
-          infrastructure:
-            useFromStage: Validate
+          cloneCodebase: true
+          delegateSelectors:
+            - linux-amd64
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
           sharedPaths:
             - /shared
           execution:
@@ -323,9 +335,15 @@ pipeline:
             <+stages.Train.spec.execution.steps.Step6ClassifyTraining.output.outputVariables.training_state> == "completed"
             || <+stages.Train.spec.execution.steps.Step6ClassifyTraining.output.outputVariables.training_state> == "approved"
         spec:
-          cloneCodebase: false
-          infrastructure:
-            useFromStage: Validate
+          cloneCodebase: true
+          delegateSelectors:
+            - linux-amd64
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
           sharedPaths:
             - /shared
           execution:
@@ -361,9 +379,15 @@ pipeline:
           pipelineStatus: Success
           condition: <+stages.Train.spec.execution.steps.Step6ClassifyTraining.output.outputVariables.training_state> != "rejected"
         spec:
-          cloneCodebase: false
-          infrastructure:
-            useFromStage: Validate
+          cloneCodebase: true
+          delegateSelectors:
+            - linux-amd64
+          platform:
+            os: Linux
+            arch: Amd64
+          runtime:
+            type: Docker
+            spec: {}
           sharedPaths:
             - /shared
           execution:
