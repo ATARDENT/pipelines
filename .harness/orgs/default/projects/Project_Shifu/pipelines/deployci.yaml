@@ -60,7 +60,7 @@ pipeline:
                   name: InitAndTest
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
@@ -99,7 +99,7 @@ pipeline:
                   name: FetchModel
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
@@ -129,7 +129,7 @@ pipeline:
                     stageStatus: Success
                     condition: <+pipeline.variables.deployTarget> == "cpu-ondemand"
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: atardent/mlrunner-ci:latest
                     shell: Bash
                     envVariables:
@@ -163,7 +163,7 @@ pipeline:
                     stageStatus: Success
                     condition: <+pipeline.variables.deployTarget> == "gpu-spot"
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: atardent/mlrunner-ci:latest
                     shell: Bash
                     envVariables:
