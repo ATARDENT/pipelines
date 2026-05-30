@@ -68,9 +68,14 @@ pipeline:
                     command: |
                       set -euo pipefail
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
-                      # colab-sdk is a PRIVATE git submodule. Authenticate over HTTPS with the PAT.
-                      git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
-                      git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                      # colab-sdk is a PRIVATE submodule registered with an SSH URL
+                      # (git@github.com:...). Rewrite SSH + https GitHub URLs to
+                      # authenticated HTTPS using the PAT. Use --add so every rewrite
+                      # coexists (plain `git config` would overwrite the previous one).
+                      git config --global --add url."https://${GH_TOKEN}@github.com/".insteadOf "git@github.com:"
+                      git config --global --add url."https://${GH_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+                      git config --global --add url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                      git submodule sync --recursive
                       git submodule update --init --recursive
                       pip install -e '.[dev]' -e './colab-sdk' -q
                       # Fast gate — unit + simulated, no Colab credentials touched.
