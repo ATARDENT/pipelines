@@ -98,7 +98,7 @@ pipeline:
                   name: Step2ValidateDataset
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
@@ -109,7 +109,7 @@ pipeline:
                   name: Step3SplitData
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
@@ -141,7 +141,7 @@ pipeline:
                       name: Step4ProvisionBackend
                       type: Run
                       spec:
-                        connectorRef: account.dockerhub
+                        connectorRef: dockerhubconnector
                         image: python:3.11-slim
                         shell: Bash
                         envVariables:
@@ -160,7 +160,7 @@ pipeline:
                       name: Step5ResumeCheck
                       type: Run
                       spec:
-                        connectorRef: account.dockerhub
+                        connectorRef: dockerhubconnector
                         image: python:3.11-slim
                         shell: Bash
                         command: python find_checkpoint.py
@@ -172,7 +172,7 @@ pipeline:
                       type: Run
                       timeout: 25h
                       spec:
-                        connectorRef: account.dockerhub
+                        connectorRef: dockerhubconnector
                         image: python:3.11-slim
                         shell: Bash
                         envVariables:
@@ -261,7 +261,7 @@ pipeline:
                   name: Step8StoreModel
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
@@ -331,7 +331,7 @@ pipeline:
                   name: Step11GitTag
                   type: Run
                   spec:
-                    connectorRef: account.dockerhub
+                    connectorRef: dockerhubconnector
                     image: alpine/git:latest
                     shell: Sh
                     envVariables:
