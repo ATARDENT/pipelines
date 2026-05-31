@@ -24,7 +24,7 @@ pipeline:
   properties:
     ci:
       codebase:
-        connectorRef: githubconnector
+        connectorRef: <+input>
         repoName: <+input>
         build: <+input>
   variables:
@@ -51,7 +51,7 @@ pipeline:
       value: <+input>.default("false").allowedValues("false", "true")
     - name: mlpipeGitUrl
       type: String
-      description: mlpipe repo identifier — "ORG/REPO.git@REF". No protocol, no token.
+      description: Git URL for installing mlpipe in every step. Override to test a branch.
       value: ATARDENT/mlpipe.git@v0.3.0
   stages:
     - stage:
@@ -109,7 +109,7 @@ pipeline:
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
-                      pip install --quiet "mlpipe[ci] @ ${MLPIPE_GIT_URL}"
+                      pip install --quiet "mlpipe[ci] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.apply_overrides
                       if [ -f /tmp/.harness_outputs.env ]; then
                         set -a; . /tmp/.harness_outputs.env; set +a
@@ -127,11 +127,12 @@ pipeline:
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
+                      GH_TOKEN: <+secrets.getValue("github_pat")>
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
-                      pip install --quiet "mlpipe[ci] @ ${MLPIPE_GIT_URL}"
+                      pip install --quiet "mlpipe[ci] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.parse_manifest
                       if [ -f /tmp/.harness_outputs.env ]; then
                         set -a; . /tmp/.harness_outputs.env; set +a
@@ -149,10 +150,11 @@ pipeline:
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
+                      GH_TOKEN: <+secrets.getValue("github_pat")>
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
-                      pip install --quiet "mlpipe[ci] @ ${MLPIPE_GIT_URL}" ruff
+                      pip install --quiet "mlpipe[ci] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}" ruff
                       python -m mlpipe.cli.smoke_test --level 2
     - stage:
         name: ValidateDataset
@@ -201,11 +203,12 @@ pipeline:
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
+                      GH_TOKEN: <+secrets.getValue("github_pat")>
                       DATASET_PATH: <+steps.Step1CloneDataset.output.outputVariables.dataset_path>
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
-                      pip install --quiet "mlpipe[ci] @ ${MLPIPE_GIT_URL}"
+                      pip install --quiet "mlpipe[ci] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.validate_dataset
               - step:
                   identifier: Step3SplitData
@@ -216,12 +219,13 @@ pipeline:
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
+                      GH_TOKEN: <+secrets.getValue("github_pat")>
                       DATASET_PATH: <+steps.Step1CloneDataset.output.outputVariables.dataset_path>
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
-                      pip install --quiet "mlpipe[ci] @ ${MLPIPE_GIT_URL}"
+                      pip install --quiet "mlpipe[ci] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.run_split
                       if [ -f /tmp/.harness_outputs.env ]; then
                         set -a; . /tmp/.harness_outputs.env; set +a
@@ -256,6 +260,7 @@ pipeline:
                         image: python:3.11-slim
                         shell: Bash
                         envVariables:
+                          GH_TOKEN: <+secrets.getValue("github_pat")>
                           RUN_ID: <+pipeline.variables.trainingRunId>
                           R2_BUCKET: <+secrets.getValue("R2_BUCKET")>
                           R2_ACCOUNT_ID: <+secrets.getValue("R2_ACCOUNT_ID")>
@@ -265,7 +270,7 @@ pipeline:
                         command: |
                           set -euo pipefail
                           rm -f /tmp/.harness_outputs.env
-                          pip install --quiet "mlpipe[ci,r2] @ ${MLPIPE_GIT_URL}"
+                          pip install --quiet "mlpipe[ci,r2] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}"
                           python -m mlpipe.ci.find_checkpoint
                           if [ -f /tmp/.harness_outputs.env ]; then
                             set -a; . /tmp/.harness_outputs.env; set +a
@@ -274,7 +279,7 @@ pipeline:
                           - name: resume_from
                   - step:
                       identifier: Step6RunTrainingColab
-                      name: Step 6 - Run Training _ Colab
+                      name: Step 6 - Run Training_Colab
                       type: Run
                       timeout: 25h
                       when:
@@ -285,6 +290,7 @@ pipeline:
                         image: atardent/mlrunner-ci:latest
                         shell: Bash
                         envVariables:
+                          GH_TOKEN: <+secrets.getValue("github_pat")>
                           SPLITS_DIR: <+stages.ValidateDataset.spec.execution.steps.Step3SplitData.output.outputVariables.splits_dir>
                           RESUME_FROM: <+steps.Step5ResumeCheck.output.outputVariables.resume_from>
                           RUN_ID: <+pipeline.variables.trainingRunId>
@@ -309,7 +315,7 @@ pipeline:
                           # but expects creds at this path.
                           mkdir -p /root/.local/share/colab-cli
                           printf '%s' "$COLAB_CREDENTIALS_JSON" > /root/.local/share/colab-cli/credentials.json
-                          pip install --quiet "mlpipe[ci,r2,colab] @ ${MLPIPE_GIT_URL}"
+                          pip install --quiet "mlpipe[ci,r2,colab] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}"
                           rm -f /tmp/.harness_outputs.env
                           python -m mlpipe.ci.run_training_colab
                           if [ -f /tmp/.harness_outputs.env ]; then
@@ -320,7 +326,7 @@ pipeline:
                           - name: checkpoint_uri
                   - step:
                       identifier: Step6RunTrainingSkyPilot
-                      name: Step 6 - Run Training _ SkyPilot
+                      name: Step 6 - Run Training_SkyPilot
                       type: Run
                       timeout: 25h
                       when:
@@ -331,6 +337,7 @@ pipeline:
                         image: berkeleyskypilot/skypilot:latest
                         shell: Bash
                         envVariables:
+                          GH_TOKEN: <+secrets.getValue("github_pat")>
                           SPLITS_DIR: <+stages.ValidateDataset.spec.execution.steps.Step3SplitData.output.outputVariables.splits_dir>
                           RESUME_FROM: <+steps.Step5ResumeCheck.output.outputVariables.resume_from>
                           RUN_ID: <+pipeline.variables.trainingRunId>
@@ -359,7 +366,7 @@ pipeline:
                               > /root/.config/gcloud/application_default_credentials.json
                             export GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
                           fi
-                          pip install --quiet "mlpipe[ci,r2,skypilot] @ ${MLPIPE_GIT_URL}"
+                          pip install --quiet "mlpipe[ci,r2,skypilot] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}"
                           rm -f /tmp/.harness_outputs.env
                           python -m mlpipe.ci.run_training_skypilot
                           if [ -f /tmp/.harness_outputs.env ]; then
@@ -377,11 +384,12 @@ pipeline:
                         image: python:3.11-slim
                         shell: Bash
                         envVariables:
+                          GH_TOKEN: <+secrets.getValue("github_pat")>
                           MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                         command: |
                           set -euo pipefail
                           rm -f /tmp/.harness_outputs.env
-                          pip install --quiet "mlpipe[ci] @ ${MLPIPE_GIT_URL}"
+                          pip install --quiet "mlpipe[ci] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}"
                           python -m mlpipe.ci.classify_outcome
                           if [ -f /tmp/.harness_outputs.env ]; then
                             set -a; . /tmp/.harness_outputs.env; set +a
@@ -452,6 +460,7 @@ pipeline:
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
+                      GH_TOKEN: <+secrets.getValue("github_pat")>
                       CHECKPOINT_URI: <+stages.Train.spec.execution.steps.Step7ClassifyOutcome.output.outputVariables.checkpoint>
                       RUN_ID: <+pipeline.variables.trainingRunId>
                       R2_ACCOUNT_ID: <+secrets.getValue("R2_ACCOUNT_ID")>
@@ -464,7 +473,7 @@ pipeline:
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
-                      pip install --quiet "mlpipe[ci,r2,hf] @ ${MLPIPE_GIT_URL}"
+                      pip install --quiet "mlpipe[ci,r2,hf] @ git+https://x-access-token:${GH_TOKEN}@github.com/${MLPIPE_GIT_URL}"
                       # promote_via_local pulls CHECKPOINT_URI to a temp dir
                       # then pushes to the manifest.output destination.
                       python -c "
