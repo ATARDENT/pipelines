@@ -51,8 +51,8 @@ pipeline:
       value: <+input>.default("false").allowedValues("false", "true")
     - name: mlpipeGitUrl
       type: String
-      description: Git URL for installing mlpipe in every step. Override to test a branch.
-      value: <+input>.default("git+https://github.com/ATARDENT/mlpipe.git@v0.3.0")
+      description: mlpipe repo identifier — "ORG/REPO.git@REF". No protocol, no token.
+      value: ATARDENT/mlpipe.git@v0.3.0
   stages:
     - stage:
         name: ValidateCode
