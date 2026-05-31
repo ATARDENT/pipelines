@@ -49,11 +49,11 @@ pipeline:
     - name: highRam
       type: String
       description: Request high-RAM runtime (cpu-ondemand / Colab only).
-      value: <+input>.default("false").allowedValues(false, true)
+      value: <+input>.default("false").allowedValues("false", "true")
     - name: replaceExisting
       type: String
       description: cpu-ondemand only. Colab allows ONE server per account, so a new endpoint can't coexist with the old one. "false" (default) PROTECTS a live endpoint — the run aborts instead of killing it. "true" tears down the existing server first, then provisions the new one (brief downtime during the swap).
-      value: <+input>.default("false").allowedValues(false, true)
+      value: <+input>.default("false").allowedValues("false", "true")
     - name: approvalUserGroup
       type: String
       description: Harness user group authorised to approve teardown of the live endpoint.
