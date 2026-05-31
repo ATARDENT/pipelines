@@ -24,7 +24,7 @@ pipeline:
   properties:
     ci:
       codebase:
-        connectorRef: github-connector
+        connectorRef: github_connector
         repoName: <+input>
         build: <+input>
   variables:
