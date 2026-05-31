@@ -242,3 +242,132 @@ cat /tmp/out.env
 For `train_supervisor.py`, a useful local-test mode: stub out the
 Harness API check by leaving `HARNESS_API_TOKEN` unset, and the
 approval-polling branch is a no-op.
+
+# model-ci v0.3
+
+Generic Harness pipeline for any training-template instance. Stage shape:
+
+```
+ValidateCode → ValidateDataset → parallel{Train, ApprovalGate}
+             → PersistModel    → TagVersion
+```
+
+The Train stage has, in order:
+- Step 5 — ResumeCheck (look for a resumable checkpoint in R2)
+- Step 6 — RunTraining: one of TWO variants, gated by `backend_name`:
+  - **Colab** (`backend_name == "colab"`): provisions a Colab kernel via
+    `colab-cli`, runs `mlpipe-train-remote` on it, polls. Image:
+    `atardent/mlrunner-ci:latest`.
+  - **SkyPilot** (everything else): translates the manifest into a
+    SkyPilot task spec, launches a cluster, polls. Image:
+    `berkeleyskypilot/skypilot:latest`. Covers AWS / GCP / Azure /
+    Lambda / Vast / RunPod / Spheron / Kubernetes / etc.
+- Step 7 — ClassifyOutcome (read `/tmp/shared/training_status.json`,
+  emit Harness output vars).
+
+The ApprovalGate runs in parallel. The supervisor inside Step 6 polls
+the gate via the Harness REST API and aborts it on natural completion
+so the parallel block doesn't sit on the 25h approval timeout.
+
+## Two trigger modes
+
+### Mode A — train a commit (default)
+
+Pick a branch / tag / commit of a training repo. The pipeline clones it,
+parses the manifest as-is, trains, tags. The final git tag points at
+that commit.
+
+### Mode B — custom-config build from a commit hash
+
+Set the `configOverridesJson` pipeline variable to a JSON object with
+dotted-path keys:
+
+```json
+{
+  "training.max_epochs": 20,
+  "training.hyperparameters.learning_rate": 1e-4,
+  "dataset.deputy": "01999f0a-1234-5678-9abc-def012345678"
+}
+```
+
+The `ApplyOverrides` step in `ValidateCode`:
+1. Deep-merges the overrides into `manifest.yaml`
+2. Commits to a new branch `auto/run-<executionId>`
+3. Pushes the branch (if `github_pat` is configured)
+4. Emits `auto_commit_sha` as an output variable
+
+Subsequent stages train against the rewritten manifest. The final
+`TagVersion` step tags the auto-branch commit — so the trained model
+is permanently traceable to its exact config via a real git reference.
+
+If `configOverridesJson` is empty or `"{}"`, ApplyOverrides is a no-op
+and the pipeline behaves like Mode A.
+
+## Pipeline variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `trainingRunId` | `<pipeline.executionId>` | Embedded in R2 keys + git tag |
+| `configOverridesJson` | `"{}"` | Mode B overrides; JSON object with dotted keys |
+| `replaceExistingColab` | `"false"` | Colab-only: replace running server (default: abort) |
+| `mlpipeGitUrl` | `git+https://github.com/<org>/mlpipe.git@v0.3.0` | Pin the mlpipe version |
+
+## Output variables
+
+| Step | Output |
+|---|---|
+| `ApplyOverrides` | `overrides_applied`, `auto_branch`, `auto_commit_sha` |
+| `ParseManifest` | `manifest_version`, `dataset_deputy`, `backend_name` |
+| `Step1CloneDataset` | `dataset_path` |
+| `Step3SplitData` | `splits_dir` |
+| `Step5ResumeCheck` | `resume_from` |
+| `Step6RunTraining{Colab,SkyPilot}` | `training_state`, `checkpoint_uri` |
+| `Step7ClassifyOutcome` | `training_state`, `checkpoint` (= R2 URI) |
+
+## Required Harness secrets
+
+| Secret | Used by |
+|---|---|
+| `harness_api_token` | Step 6 (approval polling) |
+| `wandb_api_key` | Step 6 |
+| `R2_BUCKET`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY` | Step 5, Step 6, Step 8 |
+| `COLAB_CREDENTIALS_JSON` | Step 6 (Colab variant only) |
+| `aws_access_key`, `aws_secret_key` | Step 6 (SkyPilot variant, AWS) |
+| `gcp_service_account_json` | Step 6 (SkyPilot variant, GCP) |
+| `hf_token` | Step 8 (HuggingFace push) |
+| `idrive_access_key`, `idrive_secret_key` | Step 8 (iDrive E2 push) |
+| `github_pat` | ApplyOverrides (push auto-branch), Step 9 (tag push) |
+
+## What changed from v0.2
+
+- The `Validate` mega-stage split into `ValidateCode` + `ValidateDataset`
+  (faster fail on script bugs).
+- `ProvisionBackend`, separate `Evaluate`, `TeardownBackend` stages are
+  GONE. Step 6 is now a single supervisor that owns provision → submit →
+  poll → teardown, and eval runs inside `mlpipe-train-remote` on the
+  provider VM right after training (Option B from the design doc).
+- Step 6 forks at the YAML level on `backend_name`. The mlrunner
+  abstraction over multiple backends is decommissioned in v0.3.0.
+- Legacy `.py` / `.sh` scripts that lived in this directory are gone.
+  Everything is `python -m mlpipe.ci.<name>` now.
+- New `ApplyOverrides` step enables Mode B.
+
+## Local development
+
+The CI helpers each run standalone. Quick check against any
+training-template repo:
+
+```bash
+cd training-template-repo
+mkdir -p /tmp/shared
+python -m mlpipe.ci.parse_manifest
+cat /tmp/.harness_outputs.env
+
+# Mode-B dry run (commits locally only, no GH_TOKEN needed)
+git init -q  # if not already
+git add . && git commit -q -m initial
+CONFIG_OVERRIDES_JSON='{"training.max_epochs": 5}' \
+HARNESS_EXECUTION_ID="local-test-1" \
+python -m mlpipe.ci.apply_overrides
+git log --oneline auto/run-local-test-1
+```
