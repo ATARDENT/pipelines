@@ -196,7 +196,7 @@ pipeline:
                       SPHERON_USER: <+pipeline.variables.spheronUser>
                       SPHERON_HOURLY_RATE: <+pipeline.variables.spheronHourlyRate>
                       SPHERON_KEY_PATH: /root/.ssh/id_ed25519
-                      SPHERON_SSH_KEY: <+secrets.getValue("SPHERON_SSH_KEY")>
+                      SPHERON_SSH_KEY_B64: <+secrets.getValue("SPHERON_SSH_KEY_B64")>
                     command: |
                       set -euo pipefail
                       if [ -z "${SPHERON_HOST:-}" ]; then
@@ -204,13 +204,20 @@ pipeline:
                         echo "https://app.spheron.ai, then pass its public IP as spheronHost." >&2
                         exit 1
                       fi
-                      # Materialise the SSH private key from the Harness secret. The
-                      # backend's paramiko transport reads it via key_filename
-                      # (SPHERON_KEY_PATH) and uses AutoAddPolicy, so there is no
-                      # known_hosts / ssh-keyscan setup to do here.
+                      # Materialise the SSH private key. It's stored BASE64-ENCODED in the
+                      # secret because Harness does not pass multi-line values byte-clean
+                      # (newlines collapse / CRLF creeps in), which makes paramiko reject
+                      # the key as "not a valid OPENSSH private key file". base64 is a
+                      # single safe line; strip any stray whitespace, then decode.
                       mkdir -p /root/.ssh && chmod 700 /root/.ssh
-                      printf '%s\n' "$SPHERON_SSH_KEY" > /root/.ssh/id_ed25519
+                      printf '%s' "$SPHERON_SSH_KEY_B64" | tr -d '[:space:]' | base64 -d > /root/.ssh/id_ed25519
                       chmod 600 /root/.ssh/id_ed25519
+                      if ! head -1 /root/.ssh/id_ed25519 | grep -q 'PRIVATE KEY'; then
+                        echo "ERROR: decoded SPHERON_SSH_KEY_B64 is not a private key." >&2
+                        echo "Re-create the secret with:  base64 -w0 ~/.ssh/id_spheron" >&2
+                        echo "and paste the entire single-line output as the secret value." >&2
+                        exit 1
+                      fi
                       # [spheron] extra pulls paramiko; colab-sdk satisfies top-level
                       # imports in mlrunner/__init__ (submodule already inited by InitAndTest).
                       pip install -e '.[spheron]' -e './colab-sdk' -q
@@ -293,7 +300,7 @@ pipeline:
                       COLAB_CREDENTIALS_JSON: <+secrets.getValue("COLAB_CREDENTIALS_JSON")>
                       SPHERON_HOST: <+pipeline.variables.spheronHost>
                       SPHERON_USER: <+pipeline.variables.spheronUser>
-                      SPHERON_SSH_KEY: <+secrets.getValue("SPHERON_SSH_KEY")>
+                      SPHERON_SSH_KEY_B64: <+secrets.getValue("SPHERON_SSH_KEY_B64")>
                     command: |
                       set -euo pipefail
                       if [ "${DEPLOY_TARGET}" = "gpu-spheron" ]; then
@@ -306,7 +313,8 @@ pipeline:
                         else
                           apt-get update -qq && apt-get install -y -qq openssh-client >/dev/null
                           mkdir -p /root/.ssh && chmod 700 /root/.ssh
-                          printf '%s\n' "$SPHERON_SSH_KEY" > /root/.ssh/id_ed25519
+                          # Key is base64-encoded in the secret (see ServeSpheron for why).
+                          printf '%s' "$SPHERON_SSH_KEY_B64" | tr -d '[:space:]' | base64 -d > /root/.ssh/id_ed25519
                           chmod 600 /root/.ssh/id_ed25519
                           echo "Stopping serving processes on ${SPHERON_HOST} (endpoint goes down)..."
                           ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
