@@ -1,0 +1,49 @@
+inputSet:
+  pipeline:
+    identifier: model_deploy
+    properties:
+      ci:
+        codebase:
+          connectorRef: ML_Runner
+          build:
+            type: branch
+            spec:
+              branch: feat/skypilot-spot-colab-timeout-ci-harness
+    variables:
+      - name: modelRunId
+        type: String
+        value: ""
+      - name: modelSource
+        type: String
+        value: hf
+      - name: hfRepoId
+        type: String
+        value: Qwen/Qwen3-0.6B
+      - name: deployTarget
+        type: String
+        value: gpu-spheron
+      - name: gpuType
+        type: String
+        value: V100
+      - name: spheronHost
+        type: String
+        value: 65.108.33.83
+      - name: spheronUser
+        type: String
+        value: root
+      - name: spheronHourlyRate
+        type: String
+        value: ""
+      - name: highRam
+        type: String
+        value: "false"
+      - name: replaceExisting
+        type: String
+        value: "\"false\""
+      - name: approvalUserGroup
+        type: String
+        value: account.ml_reviewers
+  name: Test-2
+  identifier: Test2
+  orgIdentifier: default
+  projectIdentifier: Project_Shifu
