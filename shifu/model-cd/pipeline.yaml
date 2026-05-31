@@ -170,11 +170,13 @@ pipeline:
                       # serve_model.py prints endpoint_url/server_name on stdout, but
                       # mlrunner also writes upload chatter there (e.g. a "✓ ... → ..."
                       # line) — so source ONLY the key=value lines, not the whole stream.
-                      grep -E '^(endpoint_url|server_name)=' /tmp/serve.out > /tmp/serve.env || true
+                      grep -E '^(endpoint_url|server_name|endpoint_port|endpoint_app_module)=' /tmp/serve.out > /tmp/serve.env || true
                       set -a; . /tmp/serve.env; set +a
                     outputVariables:
                       - name: endpoint_url
                       - name: server_name
+                      - name: endpoint_port
+                      - name: endpoint_app_module
               - step:
                   identifier: ServeSpheron
                   name: ServeSpheron
@@ -225,11 +227,13 @@ pipeline:
                       # serve_model.py prints endpoint_url/server_name on stdout, but
                       # mlrunner also writes upload chatter there (e.g. a "✓ ... → ..."
                       # line) — so source ONLY the key=value lines, not the whole stream.
-                      grep -E '^(endpoint_url|server_name)=' /tmp/serve.out > /tmp/serve.env || true
+                      grep -E '^(endpoint_url|server_name|endpoint_port|endpoint_app_module)=' /tmp/serve.out > /tmp/serve.env || true
                       set -a; . /tmp/serve.env; set +a
                     outputVariables:
                       - name: endpoint_url
                       - name: server_name
+                      - name: endpoint_port
+                      - name: endpoint_app_module
           platform:
             os: Linux
             arch: Amd64
@@ -250,15 +254,19 @@ pipeline:
                   timeout: 2h
                   spec:
                     approvalMessage: |
-                      A model endpoint is now LIVE (the URL is in the ServeColab /
+                      THIS run's model endpoint is now LIVE (its URL is in the ServeColab /
                       ServeSpheron step output of the Deploy stage). It serves until you
                       STOP it here.
 
-                      Approve OR Reject — STOP the endpoint now. Both buttons do the same.
+                      On a shared GPU box, OTHER endpoints from other pipeline runs may be
+                      live at the same time. Approving/Rejecting here stops ONLY this run's
+                      endpoint (its own port) — the others are left untouched.
+
+                      Approve OR Reject — STOP this run's endpoint now. Both buttons do the same.
                       No action         — it is stopped automatically at the timeout.
 
-                      NOTE for gpu-spheron: stopping kills the SERVING PROCESSES only.
-                      The Spheron GPU INSTANCE keeps running and BILLING — you must stop
+                      NOTE for gpu-spheron: stopping kills this endpoint's SERVING PROCESSES
+                      only. The Spheron GPU INSTANCE keeps running and BILLING — you must stop
                       it yourself in the Spheron dashboard (https://app.spheron.ai).
                       (cpu-ondemand / Colab: the runtime is fully removed.)
                     includePipelineExecutionHistory: true
@@ -301,6 +309,10 @@ pipeline:
                       SPHERON_HOST: <+pipeline.variables.spheronHost>
                       SPHERON_USER: <+pipeline.variables.spheronUser>
                       SPHERON_SSH_KEY_B64: <+secrets.getValue("SPHERON_SSH_KEY_B64")>
+                      # This run's endpoint (from the Deploy stage) so we kill ONLY it,
+                      # not co-tenant models sharing the same Spheron box.
+                      ENDPOINT_PORT: <+pipeline.stages.Deploy.spec.execution.steps.ServeSpheron.output.outputVariables.endpoint_port>
+                      ENDPOINT_APP_MODULE: <+pipeline.stages.Deploy.spec.execution.steps.ServeSpheron.output.outputVariables.endpoint_app_module>
                     command: |
                       set -euo pipefail
                       if [ "${DEPLOY_TARGET}" = "gpu-spheron" ]; then
@@ -316,11 +328,21 @@ pipeline:
                           # Key is base64-encoded in the secret (see ServeSpheron for why).
                           printf '%s' "$SPHERON_SSH_KEY_B64" | tr -d '[:space:]' | base64 -d > /root/.ssh/id_ed25519
                           chmod 600 /root/.ssh/id_ed25519
-                          echo "Stopping serving processes on ${SPHERON_HOST} (endpoint goes down)..."
-                          ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
-                              -o ConnectTimeout=15 "${SPHERON_USER:-root}@${SPHERON_HOST}" \
-                              'pkill -f cloudflared || true; pkill -f "uvicorn" || true; pkill -f "app:app" || true; echo "serving stopped"' \
-                            || echo "WARN: could not reach the instance (it may already be stopped)."
+                          # Scope the kill to THIS run's port (Harness renders an
+                          # unset output var as the literal "null"). Without a port,
+                          # refuse to kill — a global pkill would drop co-tenant
+                          # endpoints other pipeline runs are serving on this box.
+                          P="${ENDPOINT_PORT:-}"; [ "$P" = "null" ] && P=""
+                          if [ -z "$P" ]; then
+                            echo "WARN: no endpoint_port recorded for this run; refusing a global" >&2
+                            echo "kill that would take down co-tenant endpoints on the box." >&2
+                          else
+                            echo "Stopping ONLY this run's endpoint on ${SPHERON_HOST}:${P} (others stay up)..."
+                            ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new \
+                                -o ConnectTimeout=15 "${SPHERON_USER:-root}@${SPHERON_HOST}" \
+                                "fuser -k ${P}/tcp || true; pkill -f 'cloudflared.*127.0.0.1:${P}' || true; echo 'serving stopped on :${P}'" \
+                              || echo "WARN: could not reach the instance (it may already be stopped)."
+                          fi
                         fi
                         echo ""
                         echo "================= ACTION REQUIRED ================="
