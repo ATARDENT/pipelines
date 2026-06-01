@@ -60,8 +60,8 @@ pipeline:
       value: <+input>.default("account.ml_reviewers")
     - name: notifyHost
       type: String
-      description: Tailscale DNS name of the notifier VPS (e.g. ardent.tail8f3b9f.ts.net). The Notify stage POSTs the live endpoint to http://<notifyHost>:8080/notify so testers get an email. Set empty to disable notification.
-      value: <+input>.default("ardent.tail8f3b9f.ts.net")
+      description: host:port of the notifier (public NAT forward -> VPS host port 80). The Notify stage POSTs the live endpoint to http://<notifyHost>/notify so testers get an email. Set empty to disable notification.
+      value: <+input>.default("103.78.2.25:59878")
   stages:
     - stage:
         name: Deploy
@@ -277,11 +277,11 @@ pipeline:
                   spec:
                     shell: Bash
                     envVariables:
-                      TS_AUTHKEY: <+secrets.getValue("TAILSCALE_AUTH_KEY")>
                       NOTIFY_HOST: <+pipeline.variables.notifyHost>
                       NOTIFY_TOKEN: <+secrets.getValue("VPS_NOTIFY_TOKEN")>
                       DEPLOY_TARGET: <+pipeline.variables.deployTarget>
                       RUN_ID: <+pipeline.variables.modelRunId>
+                      EXEC_ID: <+pipeline.executionId>
                       # Both serve steps are referenced; only one ran — Harness renders the
                       # skipped step's output as the literal "null" (same as the Teardown stage).
                       ENDPOINT_COLAB: <+pipeline.stages.Deploy.spec.execution.steps.ServeColab.output.outputVariables.endpoint_url>
@@ -290,19 +290,19 @@ pipeline:
                       SERVER_SPHERON: <+pipeline.stages.Deploy.spec.execution.steps.ServeSpheron.output.outputVariables.server_name>
                     command: |
                       set -euo pipefail
-                      # ── join the tailnet (mirrors pc-slay; Cloud runner has a kernel TUN) ──
-                      curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg \
-                        | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
-                      curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list \
-                        | sudo tee /etc/apt/sources.list.d/tailscale.list
-                      sudo apt-get update -y -qq
-                      sudo apt-get install -y -qq tailscale
-                      sudo tailscaled &
-                      sleep 5
-                      sudo tailscale up --authkey="$TS_AUTHKEY" --hostname=harness-model-cd
-                      timeout 20s tailscale ping --timeout=15s "$NOTIFY_HOST" >/dev/null 2>&1 || true
+                      # Reach the notifier directly over the VPS's public NAT forward
+                      # (host:port in NOTIFY_HOST -> VPS host port 80). No Tailscale.
+                      #
+                      # Normalize every injected var to a safe default so `set -u` never
+                      # trips on an expression that resolved empty (this was the RUN_ID crash).
+                      : "${RUN_ID:=}"; : "${EXEC_ID:=}"; : "${DEPLOY_TARGET:=}"
+                      : "${ENDPOINT_COLAB:=}"; : "${ENDPOINT_SPHERON:=}"
+                      : "${SERVER_COLAB:=}"; : "${SERVER_SPHERON:=}"
+
+                      if [ -z "$RUN_ID" ]; then RUN_ID="${EXEC_ID:-unknown}"; fi   # notifier requires run_id (min_length=1)
 
                       # ── pick the endpoint from whichever serve step actually ran ──
+                      # (Harness renders the skipped step's output as the literal "null")
                       EP="$ENDPOINT_COLAB"
                       if [ -z "$EP" ] || [ "$EP" = "null" ]; then EP="$ENDPOINT_SPHERON"; fi
                       if [ "$EP" = "null" ]; then EP=""; fi
@@ -317,8 +317,8 @@ pipeline:
 
                       BODY=$(printf '{"endpoint_url":"%s","run_id":"%s","deploy_target":"%s","server_name":"%s"}' \
                         "$EP" "$RUN_ID" "$DEPLOY_TARGET" "$SRV")
-                      echo "[notify] POST http://$NOTIFY_HOST:8080/notify  (endpoint=$EP)"
-                      curl -fsS --max-time 30 -X POST "http://$NOTIFY_HOST:8080/notify" \
+                      echo "[notify] POST http://$NOTIFY_HOST/notify  (endpoint=$EP run_id=$RUN_ID)"
+                      curl -fsS --max-time 30 -X POST "http://$NOTIFY_HOST/notify" \
                         -H "Authorization: Bearer $NOTIFY_TOKEN" \
                         -H "Content-Type: application/json" \
                         -d "$BODY"
