@@ -58,6 +58,10 @@ pipeline:
       type: String
       description: Harness user group authorised to approve teardown of the live endpoint.
       value: <+input>.default("account.ml_reviewers")
+    - name: notifyHost
+      type: String
+      description: Tailscale DNS name of the notifier VPS (e.g. ardent.tail8f3b9f.ts.net). The Notify stage POSTs the live endpoint to http://<notifyHost>:8080/notify so testers get an email. Set empty to disable notification.
+      value: <+input>.default("ardent.tail8f3b9f.ts.net")
   stages:
     - stage:
         name: Deploy
@@ -240,6 +244,86 @@ pipeline:
           runtime:
             type: Docker
             spec: {}
+    - stage:
+        name: Notify
+        identifier: Notify
+        description: Email the tester list that THIS run's endpoint is live, so people can
+          test it during the approval window before teardown. Best-effort — a failure here
+          never blocks the live endpoint or the teardown approval.
+        type: CI
+        when:
+          pipelineStatus: Success
+          condition: <+pipeline.variables.notifyHost> != ""
+        failureStrategies:
+          - onFailure:
+              errors:
+                - AllErrors
+              action:
+                type: MarkAsSuccess
+        spec:
+          cloneCodebase: false
+          platform:
+            os: Linux
+            arch: Arm64
+          runtime:
+            type: Cloud
+            spec: {}
+          execution:
+            steps:
+              - step:
+                  type: Run
+                  name: NotifyEndpoint
+                  identifier: NotifyEndpoint
+                  spec:
+                    shell: Bash
+                    envVariables:
+                      TS_AUTHKEY: <+secrets.getValue("TAILSCALE_AUTH_KEY")>
+                      NOTIFY_HOST: <+pipeline.variables.notifyHost>
+                      NOTIFY_TOKEN: <+secrets.getValue("VPS_NOTIFY_TOKEN")>
+                      DEPLOY_TARGET: <+pipeline.variables.deployTarget>
+                      RUN_ID: <+pipeline.variables.modelRunId>
+                      # Both serve steps are referenced; only one ran — Harness renders the
+                      # skipped step's output as the literal "null" (same as the Teardown stage).
+                      ENDPOINT_COLAB: <+pipeline.stages.Deploy.spec.execution.steps.ServeColab.output.outputVariables.endpoint_url>
+                      ENDPOINT_SPHERON: <+pipeline.stages.Deploy.spec.execution.steps.ServeSpheron.output.outputVariables.endpoint_url>
+                      SERVER_COLAB: <+pipeline.stages.Deploy.spec.execution.steps.ServeColab.output.outputVariables.server_name>
+                      SERVER_SPHERON: <+pipeline.stages.Deploy.spec.execution.steps.ServeSpheron.output.outputVariables.server_name>
+                    command: |
+                      set -euo pipefail
+                      # ── join the tailnet (mirrors pc-slay; Cloud runner has a kernel TUN) ──
+                      curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg \
+                        | sudo tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null
+                      curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list \
+                        | sudo tee /etc/apt/sources.list.d/tailscale.list
+                      sudo apt-get update -y -qq
+                      sudo apt-get install -y -qq tailscale
+                      sudo tailscaled &
+                      sleep 5
+                      sudo tailscale up --authkey="$TS_AUTHKEY" --hostname=harness-model-cd
+                      timeout 20s tailscale ping --timeout=15s "$NOTIFY_HOST" >/dev/null 2>&1 || true
+
+                      # ── pick the endpoint from whichever serve step actually ran ──
+                      EP="$ENDPOINT_COLAB"
+                      if [ -z "$EP" ] || [ "$EP" = "null" ]; then EP="$ENDPOINT_SPHERON"; fi
+                      if [ "$EP" = "null" ]; then EP=""; fi
+                      SRV="$SERVER_COLAB"
+                      if [ -z "$SRV" ] || [ "$SRV" = "null" ]; then SRV="$SERVER_SPHERON"; fi
+                      if [ "$SRV" = "null" ]; then SRV=""; fi
+
+                      if [ -z "$EP" ]; then
+                        echo "[notify] no endpoint_url resolved (deployTarget=$DEPLOY_TARGET); skipping." >&2
+                        exit 0
+                      fi
+
+                      BODY=$(printf '{"endpoint_url":"%s","run_id":"%s","deploy_target":"%s","server_name":"%s"}' \
+                        "$EP" "$RUN_ID" "$DEPLOY_TARGET" "$SRV")
+                      echo "[notify] POST http://$NOTIFY_HOST:8080/notify  (endpoint=$EP)"
+                      curl -fsS --max-time 30 -X POST "http://$NOTIFY_HOST:8080/notify" \
+                        -H "Authorization: Bearer $NOTIFY_TOKEN" \
+                        -H "Content-Type: application/json" \
+                        -d "$BODY"
+                      echo
+                      echo "[notify] sent to the recipient list."
     - stage:
         name: ApprovalGate
         identifier: ApprovalGate
