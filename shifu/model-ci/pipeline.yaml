@@ -49,12 +49,6 @@ pipeline:
         aborts if one already exists (default — protects long-running
         training from being silently killed).
       value: <+input>.default("false").allowedValues("false", "true")
-    - name: mlpipeConnectorRef
-      type: String
-      description: |
-        Harness GitHub connector to fetch mlpipe with. Typically the same
-        connector you use for the codebase. Must have read access to ATARDENT/mlpipe.
-      value: <+input>
   stages:
     - stage:
         name: ValidateCode
@@ -79,8 +73,8 @@ pipeline:
                   name: Clone mlpipe
                   type: GitClone
                   spec:
-                    connectorRef: <+pipeline.variables.mlpipeConnectorRef>
-                    repoName: ATARDENT/mlpipe
+                    connectorRef: githubconnector
+                    repoName: mlpipe
                     build:
                       type: tag
                       spec:
@@ -186,8 +180,8 @@ pipeline:
                   name: Clone mlpipe
                   type: GitClone
                   spec:
-                    connectorRef: <+pipeline.variables.mlpipeConnectorRef>
-                    repoName: ATARDENT/mlpipe
+                    connectorRef: githubconnector
+                    repoName: mlpipe
                     build:
                       type: tag
                       spec:
@@ -272,7 +266,7 @@ pipeline:
                       type: GitClone
                       spec:
                         connectorRef: githubconnector
-                        repoName: ATARDENT/mlpipe
+                        repoName: mlpipe
                         build:
                           type: tag
                           spec:
@@ -479,8 +473,8 @@ pipeline:
                   name: Clone mlpipe
                   type: GitClone
                   spec:
-                    connectorRef: <+pipeline.variables.mlpipeConnectorRef>
-                    repoName: ATARDENT/mlpipe
+                    connectorRef: githubconnector
+                    repoName: mlpipe
                     build:
                       type: tag
                       spec:
