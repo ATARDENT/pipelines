@@ -117,6 +117,11 @@ pipeline:
                       rm -f /tmp/.harness_outputs.env
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
                       pip install --quiet /tmp/shared/mlpipe[ci]
+                      # Strip wrapping quotes that Harness's <+input>.default("...")
+                      # leaves embedded in the value. Without this, json.loads sees
+                      # the string `"{}"` (4 chars) instead of the object {}.
+                      export CONFIG_OVERRIDES_JSON="${CONFIG_OVERRIDES_JSON%\"}"
+                      export CONFIG_OVERRIDES_JSON="${CONFIG_OVERRIDES_JSON#\"}"
                       python -m mlpipe.ci.apply_overrides
                       if [ -f /tmp/.harness_outputs.env ]; then
                         set -a; . /tmp/.harness_outputs.env; set +a
@@ -335,6 +340,9 @@ pipeline:
                           mkdir -p /root/.local/share/colab-cli
                           printf '%s' "$COLAB_CREDENTIALS_JSON" > /root/.local/share/colab-cli/credentials.json
                           pip install --quiet /tmp/shared/mlpipe[ci,r2,colab]
+                          # Strip wrapping quotes leaked by Harness's .default("...")
+                          export REPLACE_EXISTING="${REPLACE_EXISTING%\"}"
+                          export REPLACE_EXISTING="${REPLACE_EXISTING#\"}"
                           rm -f /tmp/.harness_outputs.env
                           python -m mlpipe.ci.run_training_colab
                           if [ -f /tmp/.harness_outputs.env ]; then
