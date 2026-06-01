@@ -109,8 +109,7 @@ pipeline:
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
-                      echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                      chmod 600 ~/.netrc
+                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.apply_overrides
                       if [ -f /tmp/.harness_outputs.env ]; then
@@ -134,8 +133,7 @@ pipeline:
                     command: |
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
-                      echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                      chmod 600 ~/.netrc
+                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.parse_manifest
                       if [ -f /tmp/.harness_outputs.env ]; then
@@ -158,8 +156,7 @@ pipeline:
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
-                      echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                      chmod 600 ~/.netrc
+                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}" ruff
                       python -m mlpipe.cli.smoke_test --level 2
     - stage:
@@ -214,8 +211,7 @@ pipeline:
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
-                      echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                      chmod 600 ~/.netrc
+                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.validate_dataset
               - step:
@@ -233,8 +229,7 @@ pipeline:
                     command: |
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
-                      echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                      chmod 600 ~/.netrc
+                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.run_split
                       if [ -f /tmp/.harness_outputs.env ]; then
@@ -280,8 +275,7 @@ pipeline:
                         command: |
                           set -euo pipefail
                           rm -f /tmp/.harness_outputs.env
-                          echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                          chmod 600 ~/.netrc
+                          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                           pip install --quiet "mlpipe[ci,r2] @ git+https://github.com/${MLPIPE_GIT_URL}"
                           python -m mlpipe.ci.find_checkpoint
                           if [ -f /tmp/.harness_outputs.env ]; then
@@ -327,8 +321,7 @@ pipeline:
                           # but expects creds at this path.
                           mkdir -p /root/.local/share/colab-cli
                           printf '%s' "$COLAB_CREDENTIALS_JSON" > /root/.local/share/colab-cli/credentials.json
-                          echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                          chmod 600 ~/.netrc
+                          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                           pip install --quiet "mlpipe[ci,r2,colab] @ git+https://github.com/${MLPIPE_GIT_URL}"
                           rm -f /tmp/.harness_outputs.env
                           python -m mlpipe.ci.run_training_colab
@@ -380,8 +373,7 @@ pipeline:
                               > /root/.config/gcloud/application_default_credentials.json
                             export GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
                           fi
-                          echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                          chmod 600 ~/.netrc
+                          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                           pip install --quiet "mlpipe[ci,r2,skypilot] @ git+https://github.com/${MLPIPE_GIT_URL}"
                           rm -f /tmp/.harness_outputs.env
                           python -m mlpipe.ci.run_training_skypilot
@@ -405,8 +397,7 @@ pipeline:
                         command: |
                           set -euo pipefail
                           rm -f /tmp/.harness_outputs.env
-                          echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                          chmod 600 ~/.netrc
+                          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                           pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                           python -m mlpipe.ci.classify_outcome
                           if [ -f /tmp/.harness_outputs.env ]; then
@@ -491,8 +482,7 @@ pipeline:
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
-                      echo "machine github.com login x-access-token password ${GH_TOKEN}" > ~/.netrc
-                      chmod 600 ~/.netrc
+                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
                       pip install --quiet "mlpipe[ci,r2,hf] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       # promote_via_local pulls CHECKPOINT_URI to a temp dir
                       # then pushes to the manifest.output destination.
