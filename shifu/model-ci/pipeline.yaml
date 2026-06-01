@@ -55,10 +55,6 @@ pipeline:
         Harness GitHub connector to fetch mlpipe with. Typically the same
         connector you use for the codebase. Must have read access to ATARDENT/mlpipe.
       value: <+input>
-    - name: mlpipeRef
-      type: String
-      description: Git ref of mlpipe to install (tag, branch, or SHA). Default is the v0.3.0 release.
-      value: <+input>.default("v0.3.0")
   stages:
     - stage:
         name: ValidateCode
@@ -88,7 +84,7 @@ pipeline:
                     build:
                       type: tag
                       spec:
-                        tag: <+pipeline.variables.mlpipeRef>
+                        tag: v0.3.0
                     cloneDirectory: /harness/mlpipe
               - step:
                   identifier: ResetWorkspace
@@ -195,7 +191,7 @@ pipeline:
                     build:
                       type: tag
                       spec:
-                        tag: <+pipeline.variables.mlpipeRef>
+                        tag: v0.3.0
                     cloneDirectory: /harness/mlpipe
               - step:
                   identifier: Step1CloneDataset
@@ -275,12 +271,12 @@ pipeline:
                       name: Clone mlpipe
                       type: GitClone
                       spec:
-                        connectorRef: <+pipeline.variables.mlpipeConnectorRef>
+                        connectorRef: githubconnector
                         repoName: ATARDENT/mlpipe
                         build:
                           type: tag
                           spec:
-                            tag: <+pipeline.variables.mlpipeRef>
+                            tag: v0.3.0
                         cloneDirectory: /harness/mlpipe
                   - step:
                       identifier: Step5ResumeCheck
@@ -488,7 +484,7 @@ pipeline:
                     build:
                       type: tag
                       spec:
-                        tag: <+pipeline.variables.mlpipeRef>
+                        tag: v0.3.0
                     cloneDirectory: /harness/mlpipe
               - step:
                   identifier: Step8PersistModel
