@@ -24,7 +24,7 @@ pipeline:
   properties:
     ci:
       codebase:
-        connectorRef: githubconnector
+        connectorRef: <+input>
         repoName: <+input>
         build: <+input>
   variables:
@@ -109,7 +109,17 @@ pipeline:
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
-                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                      export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                      cat > /tmp/git-askpass.sh <<'EOF'
+                      #!/bin/sh
+                      case "$1" in
+                        Username*) echo "x-access-token" ;;
+                        Password*) echo "$GH_TOKEN" ;;
+                      esac
+                      EOF
+                      chmod +x /tmp/git-askpass.sh
+                      export GIT_ASKPASS=/tmp/git-askpass.sh
+                      export GIT_TERMINAL_PROMPT=0
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.apply_overrides
                       if [ -f /tmp/.harness_outputs.env ]; then
@@ -133,7 +143,17 @@ pipeline:
                     command: |
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
-                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                      export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                      cat > /tmp/git-askpass.sh <<'EOF'
+                      #!/bin/sh
+                      case "$1" in
+                        Username*) echo "x-access-token" ;;
+                        Password*) echo "$GH_TOKEN" ;;
+                      esac
+                      EOF
+                      chmod +x /tmp/git-askpass.sh
+                      export GIT_ASKPASS=/tmp/git-askpass.sh
+                      export GIT_TERMINAL_PROMPT=0
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.parse_manifest
                       if [ -f /tmp/.harness_outputs.env ]; then
@@ -156,7 +176,17 @@ pipeline:
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
-                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                      export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                      cat > /tmp/git-askpass.sh <<'EOF'
+                      #!/bin/sh
+                      case "$1" in
+                        Username*) echo "x-access-token" ;;
+                        Password*) echo "$GH_TOKEN" ;;
+                      esac
+                      EOF
+                      chmod +x /tmp/git-askpass.sh
+                      export GIT_ASKPASS=/tmp/git-askpass.sh
+                      export GIT_TERMINAL_PROMPT=0
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}" ruff
                       python -m mlpipe.cli.smoke_test --level 2
     - stage:
@@ -211,7 +241,17 @@ pipeline:
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
-                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                      export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                      cat > /tmp/git-askpass.sh <<'EOF'
+                      #!/bin/sh
+                      case "$1" in
+                        Username*) echo "x-access-token" ;;
+                        Password*) echo "$GH_TOKEN" ;;
+                      esac
+                      EOF
+                      chmod +x /tmp/git-askpass.sh
+                      export GIT_ASKPASS=/tmp/git-askpass.sh
+                      export GIT_TERMINAL_PROMPT=0
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.validate_dataset
               - step:
@@ -229,7 +269,17 @@ pipeline:
                     command: |
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
-                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                      export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                      cat > /tmp/git-askpass.sh <<'EOF'
+                      #!/bin/sh
+                      case "$1" in
+                        Username*) echo "x-access-token" ;;
+                        Password*) echo "$GH_TOKEN" ;;
+                      esac
+                      EOF
+                      chmod +x /tmp/git-askpass.sh
+                      export GIT_ASKPASS=/tmp/git-askpass.sh
+                      export GIT_TERMINAL_PROMPT=0
                       pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       python -m mlpipe.ci.run_split
                       if [ -f /tmp/.harness_outputs.env ]; then
@@ -275,7 +325,17 @@ pipeline:
                         command: |
                           set -euo pipefail
                           rm -f /tmp/.harness_outputs.env
-                          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                          export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                          cat > /tmp/git-askpass.sh <<'EOF'
+                          #!/bin/sh
+                          case "$1" in
+                            Username*) echo "x-access-token" ;;
+                            Password*) echo "$GH_TOKEN" ;;
+                          esac
+                          EOF
+                          chmod +x /tmp/git-askpass.sh
+                          export GIT_ASKPASS=/tmp/git-askpass.sh
+                          export GIT_TERMINAL_PROMPT=0
                           pip install --quiet "mlpipe[ci,r2] @ git+https://github.com/${MLPIPE_GIT_URL}"
                           python -m mlpipe.ci.find_checkpoint
                           if [ -f /tmp/.harness_outputs.env ]; then
@@ -285,7 +345,7 @@ pipeline:
                           - name: resume_from
                   - step:
                       identifier: Step6RunTrainingColab
-                      name: Step 6 - Run Training_Colab
+                      name: Step 6 - Run Training _Colab
                       type: Run
                       timeout: 25h
                       when:
@@ -321,7 +381,17 @@ pipeline:
                           # but expects creds at this path.
                           mkdir -p /root/.local/share/colab-cli
                           printf '%s' "$COLAB_CREDENTIALS_JSON" > /root/.local/share/colab-cli/credentials.json
-                          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                          export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                          cat > /tmp/git-askpass.sh <<'EOF'
+                          #!/bin/sh
+                          case "$1" in
+                            Username*) echo "x-access-token" ;;
+                            Password*) echo "$GH_TOKEN" ;;
+                          esac
+                          EOF
+                          chmod +x /tmp/git-askpass.sh
+                          export GIT_ASKPASS=/tmp/git-askpass.sh
+                          export GIT_TERMINAL_PROMPT=0
                           pip install --quiet "mlpipe[ci,r2,colab] @ git+https://github.com/${MLPIPE_GIT_URL}"
                           rm -f /tmp/.harness_outputs.env
                           python -m mlpipe.ci.run_training_colab
@@ -333,7 +403,7 @@ pipeline:
                           - name: checkpoint_uri
                   - step:
                       identifier: Step6RunTrainingSkyPilot
-                      name: Step 6 - Run Training_SkyPilot
+                      name: Step 6 - Run Training _SkyPilot
                       type: Run
                       timeout: 25h
                       when:
@@ -373,7 +443,17 @@ pipeline:
                               > /root/.config/gcloud/application_default_credentials.json
                             export GOOGLE_APPLICATION_CREDENTIALS=/root/.config/gcloud/application_default_credentials.json
                           fi
-                          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                          export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                          cat > /tmp/git-askpass.sh <<'EOF'
+                          #!/bin/sh
+                          case "$1" in
+                            Username*) echo "x-access-token" ;;
+                            Password*) echo "$GH_TOKEN" ;;
+                          esac
+                          EOF
+                          chmod +x /tmp/git-askpass.sh
+                          export GIT_ASKPASS=/tmp/git-askpass.sh
+                          export GIT_TERMINAL_PROMPT=0
                           pip install --quiet "mlpipe[ci,r2,skypilot] @ git+https://github.com/${MLPIPE_GIT_URL}"
                           rm -f /tmp/.harness_outputs.env
                           python -m mlpipe.ci.run_training_skypilot
@@ -397,7 +477,17 @@ pipeline:
                         command: |
                           set -euo pipefail
                           rm -f /tmp/.harness_outputs.env
-                          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                          export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                          cat > /tmp/git-askpass.sh <<'EOF'
+                          #!/bin/sh
+                          case "$1" in
+                            Username*) echo "x-access-token" ;;
+                            Password*) echo "$GH_TOKEN" ;;
+                          esac
+                          EOF
+                          chmod +x /tmp/git-askpass.sh
+                          export GIT_ASKPASS=/tmp/git-askpass.sh
+                          export GIT_TERMINAL_PROMPT=0
                           pip install --quiet "mlpipe[ci] @ git+https://github.com/${MLPIPE_GIT_URL}"
                           python -m mlpipe.ci.classify_outcome
                           if [ -f /tmp/.harness_outputs.env ]; then
@@ -422,9 +512,11 @@ pipeline:
                         approvalMessage: |
                           Training run `<+pipeline.variables.trainingRunId>` is in progress.
 
-                          Approve  — interrupt training NOW, save the current checkpoint, then publish + tag.
-                          Reject   — abort the run, nothing is saved or tagged.
-                          No action — training continues until natural completion (this gate will auto-close).
+                          Two buttons:
+                            Approve — stop training now, save the current checkpoint to R2, then publish + tag.
+                            Reject  — kill training immediately. No checkpoint promoted, no model published, no tag.
+
+                          Taking no action is fine: training runs to natural completion and this gate auto-closes — equivalent to Approve happening at the final epoch.
                         includePipelineExecutionHistory: true
                         approvers:
                           userGroups:
@@ -482,7 +574,17 @@ pipeline:
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
-                      git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+                      export GH_TOKEN="${GH_TOKEN//[$' \t\r\n']/}"
+                      cat > /tmp/git-askpass.sh <<'EOF'
+                      #!/bin/sh
+                      case "$1" in
+                        Username*) echo "x-access-token" ;;
+                        Password*) echo "$GH_TOKEN" ;;
+                      esac
+                      EOF
+                      chmod +x /tmp/git-askpass.sh
+                      export GIT_ASKPASS=/tmp/git-askpass.sh
+                      export GIT_TERMINAL_PROMPT=0
                       pip install --quiet "mlpipe[ci,r2,hf] @ git+https://github.com/${MLPIPE_GIT_URL}"
                       # promote_via_local pulls CHECKPOINT_URI to a temp dir
                       # then pushes to the manifest.output destination.
