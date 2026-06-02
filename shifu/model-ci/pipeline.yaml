@@ -161,6 +161,23 @@ pipeline:
                     command: |
                       set -euo pipefail
                       pip install --quiet /tmp/shared/mlpipe[ci] ruff
+                      # Install the codebase's own deps so Level-2 import
+                      # checks can resolve torch / transformers / whatever
+                      # scripts/main.py pulls in.
+                      #
+                      # PIP_EXTRA_INDEX_URL points at the PyTorch CPU wheel
+                      # index — ~200 MB total vs ~2 GB+ for the CUDA build.
+                      # We only need torch importable for the smoke test;
+                      # actual GPU training happens on the provider VM where
+                      # CUDA is preinstalled, not on this delegate.
+                      export PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
+                      if [ -f pyproject.toml ] || [ -f setup.py ]; then
+                        pip install --quiet -e .
+                      elif [ -f requirements.txt ]; then
+                        pip install --quiet -r requirements.txt
+                      else
+                        echo "⚠ no pyproject.toml/setup.py/requirements.txt — Level 2 may fail"
+                      fi
                       python -m mlpipe.cli.smoke_test --level 2
     - stage:
         name: ValidateDataset
