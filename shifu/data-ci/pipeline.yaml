@@ -15,6 +15,18 @@ pipeline:
       type: String
       description: HuggingFace Write Token to push data to HuggingFace
       value: <+secrets.getValue("HUGGINGFACE_WRITE_TOKEN")>
+    - name: GITHUB_CLIENT_ID
+      type: String
+      description: Github App Token
+      value: <+secrets.getValue("GITHUB_APP_CLIENT_ID")>
+    - name: GITHUB_INSTALLATION_ID
+      type: String
+      description: Github App Token
+      value: <+secrets.getValue("GITHUB_APP_INSTALLATION_ID")>
+    - name: GITHUB_PRIVATE_KEY
+      type: String
+      description: Github App Token
+      value: <+secrets.getValue("GITHUB_APP_PRIVATE_KEY")>
   stages:
     - stage:
         name: Compile
@@ -124,7 +136,9 @@ pipeline:
                   spec:
                     shell: Bash
                     envVariables:
-                      GITHUB_TOKEN: <+connector.githubconnector.spec.authentication.spec.spec.tokenRef>
+                      GITHUB_APP_CLIENT_ID: <+pipeline.variables.GITHUB_CLIENT_ID>
+                      GITHUB_APP_INSTALLATION_ID: <+pipeline.variables.GITHUB_INSTALLATION_ID>
+                      GITHUB_APP_PRIVATE_KEY: <+pipeline.variables.GITHUB_PRIVATE_KEY>
                       HF_TOKEN: <+pipeline.variables.HF_TOKEN>
                     command: bash $PWD/pipeline-scripts/shifu/data-ci/scripts/publish.sh
                   failureStrategies:
