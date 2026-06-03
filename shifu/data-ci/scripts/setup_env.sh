@@ -55,7 +55,8 @@ log "Installing pipeline dependencies (PyYAML, dvc, huggingface_hub)"
 python -m pip install --quiet \
   "PyYAML>=6.0" \
   "dvc>=3.0,<4.0" \
-  "huggingface_hub>=0.24,<1.0"
+  "huggingface_hub>=0.24,<1.0" \
+  "pyjwt[crypto]>=2.8.0,<3.0"
 
 # Install the dataset's declared dependencies from manifest.yaml. Format
 # follows the data-template schema:
