@@ -124,7 +124,7 @@ pipeline:
                   spec:
                     shell: Bash
                     envVariables:
-                      GITHUB_TOKEN: <+secrets.getValue("account.github_token")>
+                      GITHUB_TOKEN: <+connector.githubconnector.spec.authentication.spec.spec.tokenRef>
                       HF_TOKEN: <+pipeline.variables.HF_TOKEN>
                     command: bash $PWD/pipeline-scripts/shifu/data-ci/scripts/publish.sh
                   failureStrategies:
