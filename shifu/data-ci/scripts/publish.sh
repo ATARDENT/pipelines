@@ -9,8 +9,10 @@
 #   - Tags the commit as `<tag.prefix>-v<version>` if `tag.enabled: true`.
 #
 # Required env (injected by the pipeline):
-#   GITHUB_TOKEN   PAT with write access (push to branch + tags)
-#   HF_TOKEN       HF token with write access (only needed when destination=huggingface)
+#   GITHUB_APP_ID                GitHub App ID (numeric)
+#   GITHUB_APP_INSTALLATION_ID   Installation ID of the App on the target repo
+#   GITHUB_APP_PRIVATE_KEY       PEM-encoded RSA private key for the App
+#   HF_TOKEN                     HF token with write access (only needed when destination=huggingface)
 
 # shellcheck source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -37,6 +39,50 @@ log "output.branch     = $target_branch"
 log "version           = $version"
 log "tag.enabled       = $tag_enabled  (prefix=$tag_prefix)"
 
+# ---------- GitHub App token minting ----------
+#
+# Exchanges the App's private key + installation ID for a short-lived (~1 hour)
+# installation access token. The token is functionally equivalent to a PAT for
+# git operations but is scoped to the App's permissions on the installation
+# and auto-expires.
+mint_github_app_token() {
+  : "${GITHUB_APP_ID:?GITHUB_APP_ID is not set}"
+  : "${GITHUB_APP_INSTALLATION_ID:?GITHUB_APP_INSTALLATION_ID is not set}"
+  : "${GITHUB_APP_PRIVATE_KEY:?GITHUB_APP_PRIVATE_KEY is not set}"
+
+  python - <<'PY'
+import json, os, sys, time, urllib.request, urllib.error
+import jwt  # pyjwt; requires `cryptography` for RS256
+
+app_id  = os.environ["GITHUB_APP_ID"]
+inst_id = os.environ["GITHUB_APP_INSTALLATION_ID"]
+key     = os.environ["GITHUB_APP_PRIVATE_KEY"]
+
+now = int(time.time())
+app_jwt = jwt.encode(
+    {"iat": now - 60, "exp": now + 540, "iss": app_id},
+    key,
+    algorithm="RS256",
+)
+
+req = urllib.request.Request(
+    f"https://api.github.com/app/installations/{inst_id}/access_tokens",
+    method="POST",
+    headers={
+        "Authorization": f"Bearer {app_jwt}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    },
+)
+try:
+    with urllib.request.urlopen(req, timeout=15) as r:
+        sys.stdout.write(json.loads(r.read())["token"])
+except urllib.error.HTTPError as e:
+    sys.stderr.write(f"GitHub App token request failed: {e.code} {e.read().decode()}\n")
+    sys.exit(1)
+PY
+}
+
 # ---------- DVC + remote upload ----------
 
 case "$destination" in
@@ -56,17 +102,14 @@ case "$destination" in
     ;;
 
   gdrive)
-    # TODO: implement Google Drive upload (e.g. via PyDrive2 or gdown).
     die "destination=gdrive not implemented yet"
     ;;
 
   idrive_e2)
-    # TODO: implement IDrive E2 upload (S3-compatible).
     die "destination=idrive_e2 not implemented yet"
     ;;
 
   github)
-    # Storing compiled bytes inside the source repo defeats the point of DVC.
     die "destination=github not implemented yet (and probably shouldn't be)"
     ;;
 
@@ -81,18 +124,22 @@ banner "Commit DVC pointers to ${target_branch}"
 
 cd "$DATASET_DIR"
 
-# Re-auth the remote in case the clone was anonymous.
-if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-  remote_url="$(git remote get-url origin)"
-  if [[ "$remote_url" == https://github.com/* ]]; then
-    git remote set-url origin "${remote_url/https:\/\//https://x-access-token:${GITHUB_TOKEN}@}"
-  fi
+# Mint a fresh installation token and use it for the push.
+log "Minting GitHub App installation token"
+GITHUB_TOKEN="$(mint_github_app_token)"
+[[ -n "$GITHUB_TOKEN" ]] || die "Failed to mint GitHub App installation token"
+
+remote_url="$(git remote get-url origin)"
+if [[ "$remote_url" == https://github.com/* ]]; then
+  git remote set-url origin "${remote_url/https:\/\//https://x-access-token:${GITHUB_TOKEN}@}"
 fi
 
-# Stash the DVC artefacts we just produced into a tarball before any branch
-# switch, then restore them on top of the target branch. This works whether
-# the target branch already exists (we overwrite its DVC config with ours)
-# or doesn't (we create it as an orphan branch with clean history).
+# Configure git identity as the App (commits will show as "<app-name>[bot]").
+git config user.name  "${GITHUB_APP_COMMITTER_NAME:-shifu-data-ci[bot]}"
+git config user.email "${GITHUB_APP_COMMITTER_EMAIL:-shifu-data-ci[bot]@users.noreply.github.com}"
+
+# (rest of the script is unchanged from here)
+
 stash="$(mktemp).tar"
 log "Stashing DVC artefacts in $stash"
 artefact_list="$(mktemp)"
