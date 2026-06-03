@@ -10,6 +10,11 @@ pipeline:
         connectorRef: githubconnector
         repoName: <+input>
         build: <+input>
+  variables:
+    - name: HF_TOKEN
+      type: String
+      description: HuggingFace Write Token to push data to HuggingFace
+      value: <+secrets.getValue("HUGGINGFACE_WRITE_TOKEN")>
   stages:
     - stage:
         name: Compile
@@ -120,7 +125,7 @@ pipeline:
                     shell: Bash
                     envVariables:
                       GITHUB_TOKEN: <+secrets.getValue("account.github_token")>
-                      HF_TOKEN: <+secrets.getValue("account.hf_token")>
+                      HF_TOKEN: <+pipeline.variables.HF_TOKEN>
                     command: bash $PWD/pipeline-scripts/shifu/data-ci/scripts/publish.sh
                   failureStrategies:
                     - onFailure:
