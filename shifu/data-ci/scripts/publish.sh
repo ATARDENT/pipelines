@@ -9,7 +9,7 @@
 #   - Tags the commit as `<tag.prefix>-v<version>` if `tag.enabled: true`.
 #
 # Required env (injected by the pipeline):
-#   GITHUB_APP_ID                GitHub App ID (numeric)
+#   GITHUB_APP_CLIENT_ID         Client ID of the GitHub App
 #   GITHUB_APP_INSTALLATION_ID   Installation ID of the App on the target repo
 #   GITHUB_APP_PRIVATE_KEY       PEM-encoded RSA private key for the App
 #   HF_TOKEN                     HF token with write access (only needed when destination=huggingface)
@@ -44,23 +44,28 @@ log "tag.enabled       = $tag_enabled  (prefix=$tag_prefix)"
 # Exchanges the App's private key + installation ID for a short-lived (~1 hour)
 # installation access token. The token is functionally equivalent to a PAT for
 # git operations but is scoped to the App's permissions on the installation
-# and auto-expires.
+# and auto-expires. Follows GitHub's official guidance:
+# https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
 mint_github_app_token() {
-  : "${GITHUB_APP_ID:?GITHUB_APP_ID is not set}"
+  : "${GITHUB_APP_CLIENT_ID:?GITHUB_APP_CLIENT_ID is not set}"
   : "${GITHUB_APP_INSTALLATION_ID:?GITHUB_APP_INSTALLATION_ID is not set}"
   : "${GITHUB_APP_PRIVATE_KEY:?GITHUB_APP_PRIVATE_KEY is not set}"
 
   python - <<'PY'
 import json, os, sys, time, urllib.request, urllib.error
-import jwt  # pyjwt; requires `cryptography` for RS256
+import jwt  # PyJWT with cryptography extra for RS256
 
-app_id  = os.environ["GITHUB_APP_ID"]
-inst_id = os.environ["GITHUB_APP_INSTALLATION_ID"]
-key     = os.environ["GITHUB_APP_PRIVATE_KEY"]
+client_id = os.environ["GITHUB_APP_CLIENT_ID"]
+inst_id   = os.environ["GITHUB_APP_INSTALLATION_ID"]
+key       = os.environ["GITHUB_APP_PRIVATE_KEY"]
 
 now = int(time.time())
 app_jwt = jwt.encode(
-    {"iat": now - 60, "exp": now + 540, "iss": app_id},
+    {
+        "iat": now - 60,    # 60s in the past to allow for clock drift
+        "exp": now + 600,   # 10 minute maximum (GitHub-enforced upper bound)
+        "iss": client_id,   # Client ID is the GitHub-recommended value
+    },
     key,
     algorithm="RS256",
 )
@@ -102,14 +107,17 @@ case "$destination" in
     ;;
 
   gdrive)
+    # TODO: implement Google Drive upload (e.g. via PyDrive2 or gdown).
     die "destination=gdrive not implemented yet"
     ;;
 
   idrive_e2)
+    # TODO: implement IDrive E2 upload (S3-compatible).
     die "destination=idrive_e2 not implemented yet"
     ;;
 
   github)
+    # Storing compiled bytes inside the source repo defeats the point of DVC.
     die "destination=github not implemented yet (and probably shouldn't be)"
     ;;
 
@@ -138,14 +146,16 @@ fi
 git config user.name  "${GITHUB_APP_COMMITTER_NAME:-shifu-data-ci[bot]}"
 git config user.email "${GITHUB_APP_COMMITTER_EMAIL:-shifu-data-ci[bot]@users.noreply.github.com}"
 
-# (rest of the script is unchanged from here)
-
+# Stash the DVC artefacts we just produced into a tarball before any branch
+# switch, then restore them on top of the target branch. This works whether
+# the target branch already exists (we overwrite its DVC config with ours)
+# or doesn't (we create it as an orphan branch with clean history).
 stash="$(mktemp).tar"
 log "Stashing DVC artefacts in $stash"
 artefact_list="$(mktemp)"
 {
-  [[ -d .dvc ]]               && echo .dvc
-  [[ -f .dvcignore ]]         && echo .dvcignore
+  [[ -d .dvc ]]                && echo .dvc
+  [[ -f .dvcignore ]]          && echo .dvcignore
   [[ -f compiled/.gitignore ]] && echo compiled/.gitignore
   find compiled -maxdepth 1 -name '*.dvc' -type f 2>/dev/null || true
 } > "$artefact_list"
