@@ -242,10 +242,10 @@ pipeline:
                       set -euo pipefail
                       export GIT_TERMINAL_PROMPT=0
                       rm -f /tmp/.harness_outputs.env
+
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
                       pip install --quiet /tmp/shared/mlpipe[ci] dvc
 
-                      # Strip whitespace from non-PEM secrets only.
                       DATASET_REPO="$(printf '%s' "${DATASET_REPO}" | tr -d '[:space:]')"
                       DATASET_REF="$(printf '%s'  "${DATASET_REF}"  | tr -d '[:space:]')"
                       HF_TOKEN="$(printf '%s'     "${HF_TOKEN}"     | tr -d '[:space:]')"
@@ -273,7 +273,11 @@ pipeline:
                       dvc remote modify --local hf auth basic
                       dvc remote modify --local hf user api
                       dvc remote modify --local hf password "${HF_TOKEN}"
-                      dvc pull --quiet
+
+                      # Pull everything in compiled/ — handles the case where there's no
+                      # dvc.yaml DAG tying the pointer files together. Drop --quiet so a
+                      # failure here actually says what's wrong.
+                      dvc pull --recursive compiled/
 
                       DATASET_PATH="/tmp/shared/dataset/repo/compiled"
                       if [ ! -d "${DATASET_PATH}" ]; then
@@ -281,7 +285,19 @@ pipeline:
                         ls -la /tmp/shared/dataset/repo
                         exit 1
                       fi
-                      echo "✓ dataset materialised at ${DATASET_PATH}"
+
+                      # Sanity-check: at least one non-.dvc file should be present after pull.
+                      # Catches the silent-no-op case where dvc thought everything was fine
+                      # but didn't actually materialise anything.
+                      DATA_FILES="$(find "${DATASET_PATH}" -type f ! -name '*.dvc' ! -name '.gitignore' | wc -l)"
+                      if [ "${DATA_FILES}" -eq 0 ]; then
+                        echo "✗ dvc pull completed but no data files materialised under ${DATASET_PATH}"
+                        echo "  Only .dvc pointers present:"
+                        ls -la "${DATASET_PATH}"
+                        exit 1
+                      fi
+
+                      echo "✓ dataset materialised at ${DATASET_PATH} (${DATA_FILES} files)"
                       ls -la "${DATASET_PATH}"
                       echo "dataset_path=${DATASET_PATH}" >> /tmp/.harness_outputs.env
                     outputVariables:
