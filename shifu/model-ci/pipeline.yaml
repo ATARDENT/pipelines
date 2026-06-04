@@ -86,7 +86,7 @@ pipeline:
                     build:
                       type: tag
                       spec:
-                        tag: v0.3.0
+                        tag: v0.3.1
                     cloneDirectory: /tmp/shared/mlpipe
               - step:
                   identifier: ResetWorkspace
