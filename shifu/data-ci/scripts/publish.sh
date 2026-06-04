@@ -5,14 +5,22 @@
 #   - Uploads bytes to the chosen destination.
 #       Currently implemented: huggingface
 #       Stubbed:                gdrive, idrive_e2  (intentionally left for later)
-#   - Commits the .dvc pointers + DVC config to `output.branch` in the source repo.
-#   - Tags the commit as `<tag.prefix>-v<version>` if `tag.enabled: true`.
+#   - Commits the .dvc pointers + DVC config to `output.dvc_branch` in the
+#     source repo (default: "datasets") on an orphan history dedicated to
+#     DVC artefacts — kept separate from human-readable source on `main`.
+#   - Tags `steps.tag.github-branch` (default: "main") as
+#     `<tag.prefix>-v<version>[-<tag.suffix>]` if `steps.tag.enabled: true`.
 #
 # Required env (injected by the pipeline):
 #   GITHUB_APP_CLIENT_ID         Client ID of the GitHub App
 #   GITHUB_APP_INSTALLATION_ID   Installation ID of the App on the target repo
 #   GITHUB_APP_PRIVATE_KEY       PEM-encoded RSA private key for the App
-#   HF_TOKEN                     HF token with write access (only needed when destination=huggingface)
+#   HF_TOKEN                     HF token with write access
+#                                (only needed when destination=huggingface)
+#
+# Optional env:
+#   GITHUB_APP_COMMITTER_NAME    Override committer name (default: shifu-data-ci[bot])
+#   GITHUB_APP_COMMITTER_EMAIL   Override committer email
 
 # shellcheck source=lib/common.sh
 source "$(dirname "$0")/lib/common.sh"
@@ -20,24 +28,30 @@ source "$(dirname "$0")/lib/common.sh"
 banner "Publish compiled dataset"
 activate_venv
 
-compile_flag="$(read_config compile true)"
+# ---------- Read manifest ----------
+
+compile_flag="$(read_config steps.compile.enabled true)"
 if [[ "$compile_flag" != "true" ]]; then
-  log "compile=false — no artefact to publish, skipping"
+  log "steps.compile.enabled=false — no artefact to publish, skipping"
   exit 0
 fi
 
 destination="$(read_config output.destination huggingface)"
 output_name="$(read_config output.name dataset-train)"
-target_branch="$(read_config output.branch datasets)"
+target_branch="$(read_config output.dvc_branch datasets)"
 version="$(read_config version 0.0.0)"
-tag_enabled="$(read_config tag.enabled false)"
-tag_prefix="$(read_config tag.prefix dataset)"
 
-log "destination       = $destination"
-log "output.name       = $output_name"
-log "output.branch     = $target_branch"
-log "version           = $version"
-log "tag.enabled       = $tag_enabled  (prefix=$tag_prefix)"
+tag_enabled="$(read_config steps.tag.enabled false)"
+tag_prefix="$(read_config steps.tag.prefix dataset)"
+tag_suffix="$(read_config steps.tag.suffix "")"
+tag_github_branch="$(read_config steps.tag.github-branch main)"
+
+log "destination         = $destination"
+log "output.name         = $output_name"
+log "output.dvc_branch   = $target_branch"
+log "version             = $version"
+log "tag.enabled         = $tag_enabled  (prefix=$tag_prefix suffix=$tag_suffix)"
+log "tag.github-branch   = $tag_github_branch"
 
 # ---------- GitHub App token minting ----------
 #
@@ -93,17 +107,19 @@ PY
 case "$destination" in
   huggingface)
     hf_repo_id="$(read_config output.hf_repo_id "")"
-    hf_repo_type="$(read_config output.hf_repo_type dataset)"
-    hf_repo_branch="$(read_config output.hf_repo_branch main)"
+    hf_repo_type="$(read_config remote.huggingface.repo_type dataset)"
+    hf_repo_private="$(read_config remote.huggingface.private false)"
+    hf_repo_branch="main"   # HF-side branch; not currently configurable
 
     [[ -n "$hf_repo_id" ]] || die "output.hf_repo_id is empty in configuration.yaml"
     [[ -n "${HF_TOKEN:-}" ]] || die "HF_TOKEN is not set (configure it as a pipeline secret)"
 
     python "$PIPELINE_ROOT/scripts/lib/hf_dvc_publish.py" \
-      --dataset-dir   "$DATASET_DIR" \
-      --hf-repo-id    "$hf_repo_id" \
-      --hf-repo-type  "$hf_repo_type" \
-      --hf-repo-branch "$hf_repo_branch"
+      --dataset-dir     "$DATASET_DIR" \
+      --hf-repo-id      "$hf_repo_id" \
+      --hf-repo-type    "$hf_repo_type" \
+      --hf-repo-branch  "$hf_repo_branch" \
+      --hf-repo-private "$hf_repo_private"
     ;;
 
   gdrive)
@@ -126,7 +142,7 @@ case "$destination" in
     ;;
 esac
 
-# ---------- Commit pointer files back to the source repo ----------
+# ---------- Commit pointer files to the DVC branch ----------
 
 banner "Commit DVC pointers to ${target_branch}"
 
@@ -142,14 +158,14 @@ if [[ "$remote_url" == https://github.com/* ]]; then
   git remote set-url origin "${remote_url/https:\/\//https://x-access-token:${GITHUB_TOKEN}@}"
 fi
 
-# Configure git identity as the App (commits will show as "<app-name>[bot]").
+# Identify as the App (commits will show as "<app-name>[bot]").
 git config user.name  "${GITHUB_APP_COMMITTER_NAME:-shifu-data-ci[bot]}"
 git config user.email "${GITHUB_APP_COMMITTER_EMAIL:-shifu-data-ci[bot]@users.noreply.github.com}"
 
-# Stash the DVC artefacts we just produced into a tarball before any branch
-# switch, then restore them on top of the target branch. This works whether
-# the target branch already exists (we overwrite its DVC config with ours)
-# or doesn't (we create it as an orphan branch with clean history).
+# Stash DVC artefacts into a tarball before any branch switch, then restore
+# them on top of the target branch. Works whether the target branch exists
+# (we overwrite its DVC config with ours) or doesn't (we create it as an
+# orphan branch with clean history).
 stash="$(mktemp).tar"
 log "Stashing DVC artefacts in $stash"
 artefact_list="$(mktemp)"
@@ -170,19 +186,31 @@ if git ls-remote --exit-code --heads origin "$target_branch" >/dev/null 2>&1; th
 else
   log "Target branch '$target_branch' does not exist — creating orphan branch"
   git checkout --orphan "$target_branch"
-  git rm -rf --quiet . || true
+  # Unstage everything (tracked files); we then explicitly write what we want.
+  git rm -rf --quiet --cached . || true
   cat > README.md <<EOF
-# DVC pointers for $(basename "$DATASET_DIR")
+# DVC pointers for ${output_name}
 
 This branch holds DVC pointer files (\`*.dvc\`) for compiled dataset artefacts.
-Actual data lives at the DVC remote configured in \`.dvc/config\`.
+The actual data lives in a **private** HuggingFace dataset repo, configured
+as a DVC remote in \`.dvc/config\`.
 
-To materialise the data locally:
+## To materialise the data locally
 
-\`\`\`bash
-git checkout $target_branch
-dvc pull
-\`\`\`
+1. Get a HuggingFace token with read access:
+   https://huggingface.co/settings/tokens
+
+2. Authenticate (one-time):
+   \`\`\`bash
+   huggingface-cli login
+   # or: export HF_TOKEN=hf_xxxxxxxxxxxxx
+   \`\`\`
+
+3. Pull the data:
+   \`\`\`bash
+   git checkout $target_branch
+   dvc pull
+   \`\`\`
 EOF
 fi
 
@@ -190,7 +218,37 @@ log "Restoring DVC artefacts on top of $target_branch"
 tar -xf "$stash"
 rm -f "$stash" "$artefact_list"
 
-git add -A
+# Write a branch-scoped .gitignore so workspace junk (venv, cloned pipeline
+# scripts, the compiled data file itself) never gets staged — only DVC
+# pointers and DVC's own config are tracked here.
+cat > .gitignore <<'EOF'
+# Virtualenvs and Python noise
+.venv/
+__pycache__/
+*.pyc
+
+# Cloned pipeline scripts (CI-only)
+pipeline-scripts/
+
+# Compiled data — only DVC pointers should be tracked
+compiled/**
+!compiled/**/*.dvc
+!compiled/**/.gitignore
+
+# DVC cache and runtime state
+.dvc/cache/
+.dvc/tmp/
+EOF
+
+# Stage an explicit allowlist rather than `git add -A`, so even if the
+# .gitignore above misses something, junk never lands on this branch.
+git add .gitignore
+[[ -f README.md ]]              && git add README.md
+[[ -f .dvcignore ]]             && git add .dvcignore
+[[ -d .dvc ]]                   && git add .dvc/config .dvc/.gitignore 2>/dev/null || true
+[[ -f compiled/.gitignore ]]    && git add compiled/.gitignore
+compgen -G "compiled/*.dvc" >/dev/null && git add compiled/*.dvc
+
 if git diff --cached --quiet; then
   log "No changes to commit — pointer files already up to date"
 else
@@ -203,16 +261,28 @@ fi
 
 if [[ "$tag_enabled" == "true" ]]; then
   tag_name="${tag_prefix}-v${version}"
-  banner "Tag commit as $tag_name"
-  if git rev-parse "$tag_name" >/dev/null 2>&1; then
-    log "Tag $tag_name already exists locally — skipping"
+  [[ -n "$tag_suffix" ]] && tag_name="${tag_name}-${tag_suffix}"
+
+  banner "Tag $tag_name on branch $tag_github_branch"
+
+  # Tag points at the tip of steps.tag.github-branch (e.g. main),
+  # NOT at the DVC pointer commit. Releases mark source-code branches.
+  if ! git ls-remote --exit-code --heads origin "$tag_github_branch" >/dev/null 2>&1; then
+    log "WARNING: $tag_github_branch does not exist on origin — skipping tag"
   else
-    git tag -a "$tag_name" -m "Dataset $output_name v$version"
-    git push origin "$tag_name"
-    log "Pushed tag $tag_name"
+    git fetch origin "$tag_github_branch" --depth 1
+    tag_commit="$(git rev-parse "origin/$tag_github_branch")"
+
+    if git rev-parse "$tag_name" >/dev/null 2>&1; then
+      log "Tag $tag_name already exists — skipping"
+    else
+      git tag -a "$tag_name" "$tag_commit" -m "Dataset $output_name v$version"
+      git push origin "$tag_name"
+      log "Pushed tag $tag_name → $tag_commit ($tag_github_branch)"
+    fi
   fi
 else
-  log "tag.enabled=false — not tagging"
+  log "steps.tag.enabled=false — not tagging"
 fi
 
 log "Publish OK"
