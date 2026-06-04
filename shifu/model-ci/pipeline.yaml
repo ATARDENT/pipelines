@@ -21,6 +21,14 @@ pipeline:
     `backend_name` by ParseManifest):
       - "colab" → Step6RunTrainingColab (atardent/mlrunner-ci image)
       - anything else → Step6RunTrainingSkyPilot (skypilot image)
+
+    Dataset retrieval (Step 1): the dataset is identified in the
+    manifest by `dataset.repo` (a git URL) and `dataset.ref` (a branch
+    or tag). The repo is expected to be a DVC project — pointer files
+    (*.dvc) are tracked in git, and the actual data lives on a DVC
+    remote configured inside the repo's .dvc/config (typically a
+    HuggingFace dataset repo). Step1CloneDataset shallow-clones the
+    repo at the given ref and runs `dvc pull` to materialise the data.
   properties:
     ci:
       codebase:
@@ -39,7 +47,7 @@ pipeline:
         new values. Example:
             {"training.max_epochs": 20,
              "training.hyperparameters.learning_rate": 0.0001,
-             "dataset.deputy": "01999f0a-..."}
+             "dataset.ref": "datasets-v2"}
         Empty / "{}" → Mode A (no overrides, train as-is).
       value: <+input>.default("{}")
     - name: replaceExistingColab
@@ -142,13 +150,19 @@ pipeline:
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
                       pip install --quiet /tmp/shared/mlpipe[ci]
+                      # ParseManifest now emits `dataset_repo` and
+                      # `dataset_ref` (replacing `dataset_deputy`). The
+                      # mlpipe-side parser reads manifest.dataset.repo
+                      # and manifest.dataset.ref and writes them to
+                      # /tmp/.harness_outputs.env.
                       python -m mlpipe.ci.parse_manifest
                       if [ -f /tmp/.harness_outputs.env ]; then
                         set -a; . /tmp/.harness_outputs.env; set +a
                       fi
                     outputVariables:
                       - name: manifest_version
-                      - name: dataset_deputy
+                      - name: dataset_repo
+                      - name: dataset_ref
                       - name: backend_name
               - step:
                   identifier: ValidateScripts
@@ -218,15 +232,61 @@ pipeline:
                     image: python:3.11-slim
                     shell: Bash
                     envVariables:
-                      DEPUTY_UUID: <+stages.ValidateCode.spec.execution.steps.ParseManifest.output.outputVariables.dataset_deputy>
+                      DATASET_REPO: <+stages.ValidateCode.spec.execution.steps.ParseManifest.output.outputVariables.dataset_repo>
+                      DATASET_REF: <+stages.ValidateCode.spec.execution.steps.ParseManifest.output.outputVariables.dataset_ref>
+                      GH_TOKEN: <+secrets.getValue("github_pat")>
+                      HF_TOKEN: <+secrets.getValue("hf_token")>
                     command: |
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
-                      # deputy-cli ships in the org's internal index.
-                      pip install --quiet deputy-cli >/dev/null 2>&1 || true
-                      mkdir -p /tmp/shared/dataset/raw
-                      deputy-cli pull "${DEPUTY_UUID}" --out /tmp/shared/dataset/raw
-                      echo "dataset_path=/tmp/shared/dataset/raw" >> /tmp/.harness_outputs.env
+
+                      # ── Dependencies ─────────────────────────────────
+                      # git: needed to clone the dataset repo.
+                      # dvc[hf]: DVC core + the HuggingFace remote driver
+                      #          (the example-dataset uses an HF dataset
+                      #          repo as its DVC store). Other remotes
+                      #          (s3, gs, azure) would need their own
+                      #          extras — add them here if your org uses
+                      #          multiple remote types.
+                      apt-get update -qq && apt-get install -y -qq git >/dev/null
+                      pip install --quiet 'dvc[hf]'
+
+                      # ── Inject creds for git + DVC remote ────────────
+                      # The dataset repo is private (GH_TOKEN); the DVC
+                      # remote is a private HF dataset repo (HF_TOKEN).
+                      # DVC's hf driver reads HUGGING_FACE_HUB_TOKEN
+                      # from the environment.
+                      export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
+                      AUTHED_REPO="$(echo "${DATASET_REPO}" | sed "s#https://#https://x-access-token:${GH_TOKEN}@#")"
+
+                      # ── Clone + materialise ──────────────────────────
+                      # Shallow clone at the requested ref. `--single-branch`
+                      # keeps the clone small; the dataset branch is
+                      # typically separate from `main` and we don't need
+                      # other branches.
+                      mkdir -p /tmp/shared/dataset
+                      git clone --depth 1 --single-branch \
+                          --branch "${DATASET_REF}" \
+                          "${AUTHED_REPO}" \
+                          /tmp/shared/dataset/repo
+
+                      cd /tmp/shared/dataset/repo
+                      dvc pull --quiet
+
+                      # ── Locate the materialised data ─────────────────
+                      # Convention: DVC outputs live under `compiled/`
+                      # in the repo (matches the example-dataset layout).
+                      # If your dataset repo uses a different directory,
+                      # adjust here or make it part of the manifest.
+                      DATASET_PATH="/tmp/shared/dataset/repo/compiled"
+                      if [ ! -d "${DATASET_PATH}" ]; then
+                        echo "✗ expected compiled/ directory after dvc pull, not found"
+                        ls -la /tmp/shared/dataset/repo
+                        exit 1
+                      fi
+                      echo "✓ dataset materialised at ${DATASET_PATH}"
+                      ls -la "${DATASET_PATH}"
+                      echo "dataset_path=${DATASET_PATH}" >> /tmp/.harness_outputs.env
                     outputVariables:
                       - name: dataset_path
               - step:
