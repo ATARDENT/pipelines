@@ -238,6 +238,7 @@ pipeline:
                       HF_TOKEN: <+secrets.getValue("hf_token")>
                     command: |
                       set -euo pipefail
+                      export GIT_TERMINAL_PROMPT=0
                       rm -f /tmp/.harness_outputs.env
 
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
@@ -249,19 +250,35 @@ pipeline:
                       GH_TOKEN="$(printf '%s'     "${GH_TOKEN}"     | tr -d '[:space:]')"
                       HF_TOKEN="$(printf '%s'     "${HF_TOKEN}"     | tr -d '[:space:]')"
 
+                      # Sanity-check secrets are actually populated.
+                      if [ -z "${GH_TOKEN}" ]; then
+                        echo "✗ GH_TOKEN is empty — check Harness secret 'github_pat'"
+                        exit 1
+                      fi
+                      if [ -z "${HF_TOKEN}" ]; then
+                        echo "✗ HF_TOKEN is empty — check Harness secret 'hf_token'"
+                        exit 1
+                      fi
+
+                      # Build the authenticated clone URL.
+                      REPO_NO_SCHEME="${DATASET_REPO#https://}"
+                      REPO_NO_SCHEME="${REPO_NO_SCHEME#http://}"
+                      AUTHED_REPO="https://x-access-token:${GH_TOKEN}@${REPO_NO_SCHEME}"
+
                       mkdir -p /tmp/shared/dataset
-                      git -c http.extraHeader="Authorization: Bearer ${GH_TOKEN}" \
-                          clone --depth 1 --single-branch \
+                      git clone --depth 1 --single-branch \
                           --branch "${DATASET_REF}" \
-                          "${DATASET_REPO}" \
+                          "${AUTHED_REPO}" \
                           /tmp/shared/dataset/repo
 
                       cd /tmp/shared/dataset/repo
 
+                      # Scrub the token out of .git/config — git stored the full authenticated
+                      # URL there as `remote.origin.url`. Anyone who later inspects the repo
+                      # (or worse, runs `git remote -v` in a log) would see the PAT.
+                      git remote set-url origin "${DATASET_REPO}"
+
                       # Inject HF creds into DVC's local config (gitignored, won't leak).
-                      # The remote is named "hf" in the example-dataset's .dvc/config but
-                      # the scheme is plain HTTPS — HF accepts a bearer token via basic auth
-                      # with any username.
                       dvc remote modify --local hf auth basic
                       dvc remote modify --local hf user api
                       dvc remote modify --local hf password "${HF_TOKEN}"
