@@ -240,44 +240,27 @@ pipeline:
                       set -euo pipefail
                       rm -f /tmp/.harness_outputs.env
 
-                      # ── Dependencies ─────────────────────────────────
-                      # git: needed to clone the dataset repo.
-                      # dvc[hf]: DVC core + the HuggingFace remote driver
-                      #          (the example-dataset uses an HF dataset
-                      #          repo as its DVC store). Other remotes
-                      #          (s3, gs, azure) would need their own
-                      #          extras — add them here if your org uses
-                      #          multiple remote types.
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
-                      pip install --quiet 'dvc[hf]'
+                      pip install --quiet 'dvc' 'dvc-hf'
 
-                      # ── Inject creds for git + DVC remote ────────────
-                      # The dataset repo is private (GH_TOKEN); the DVC
-                      # remote is a private HF dataset repo (HF_TOKEN).
-                      # DVC's hf driver reads HUGGING_FACE_HUB_TOKEN
-                      # from the environment.
+                      # Strip whitespace/newlines that Harness secrets sometimes carry.
+                      DATASET_REPO="$(printf '%s' "${DATASET_REPO}" | tr -d '[:space:]')"
+                      DATASET_REF="$(printf '%s'  "${DATASET_REF}"  | tr -d '[:space:]')"
+                      GH_TOKEN="$(printf '%s'     "${GH_TOKEN}"     | tr -d '[:space:]')"
+                      HF_TOKEN="$(printf '%s'     "${HF_TOKEN}"     | tr -d '[:space:]')"
+
                       export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
-                      AUTHED_REPO="$(echo "${DATASET_REPO}" | sed "s#https://#https://x-access-token:${GH_TOKEN}@#")"
 
-                      # ── Clone + materialise ──────────────────────────
-                      # Shallow clone at the requested ref. `--single-branch`
-                      # keeps the clone small; the dataset branch is
-                      # typically separate from `main` and we don't need
-                      # other branches.
                       mkdir -p /tmp/shared/dataset
-                      git clone --depth 1 --single-branch \
+                      git -c http.extraHeader="Authorization: Bearer ${GH_TOKEN}" \
+                          clone --depth 1 --single-branch \
                           --branch "${DATASET_REF}" \
-                          "${AUTHED_REPO}" \
+                          "${DATASET_REPO}" \
                           /tmp/shared/dataset/repo
 
                       cd /tmp/shared/dataset/repo
                       dvc pull --quiet
 
-                      # ── Locate the materialised data ─────────────────
-                      # Convention: DVC outputs live under `compiled/`
-                      # in the repo (matches the example-dataset layout).
-                      # If your dataset repo uses a different directory,
-                      # adjust here or make it part of the manifest.
                       DATASET_PATH="/tmp/shared/dataset/repo/compiled"
                       if [ ! -d "${DATASET_PATH}" ]; then
                         echo "✗ expected compiled/ directory after dvc pull, not found"
