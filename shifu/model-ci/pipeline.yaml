@@ -242,27 +242,21 @@ pipeline:
                       set -euo pipefail
                       export GIT_TERMINAL_PROMPT=0
                       rm -f /tmp/.harness_outputs.env
-
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
-                      pip install --quiet dvc
+                      pip install --quiet /tmp/shared/mlpipe[ci] dvc
 
-                      # Strip whitespace Harness secrets sometimes carry.
+                      # Strip whitespace from non-PEM secrets only.
                       DATASET_REPO="$(printf '%s' "${DATASET_REPO}" | tr -d '[:space:]')"
                       DATASET_REF="$(printf '%s'  "${DATASET_REF}"  | tr -d '[:space:]')"
-                      GH_TOKEN="$(printf '%s'     "${GH_TOKEN}"     | tr -d '[:space:]')"
                       HF_TOKEN="$(printf '%s'     "${HF_TOKEN}"     | tr -d '[:space:]')"
 
-                      # Sanity-check secrets are actually populated.
-                      if [ -z "${GH_TOKEN}" ]; then
-                        echo "✗ GH_TOKEN is empty — check Harness secret 'github_pat'"
-                        exit 1
-                      fi
+                      GH_TOKEN="$(python -m mlpipe.ci.mint_gh_token)"
+
                       if [ -z "${HF_TOKEN}" ]; then
                         echo "✗ HF_TOKEN is empty — check Harness secret 'hf_token'"
                         exit 1
                       fi
 
-                      # Build the authenticated clone URL.
                       REPO_NO_SCHEME="${DATASET_REPO#https://}"
                       REPO_NO_SCHEME="${REPO_NO_SCHEME#http://}"
                       AUTHED_REPO="https://x-access-token:${GH_TOKEN}@${REPO_NO_SCHEME}"
@@ -274,17 +268,11 @@ pipeline:
                           /tmp/shared/dataset/repo
 
                       cd /tmp/shared/dataset/repo
+                      git remote set-url origin "${DATASET_REPO}"   # scrub token from .git/config
 
-                      # Scrub the token out of .git/config — git stored the full authenticated
-                      # URL there as `remote.origin.url`. Anyone who later inspects the repo
-                      # (or worse, runs `git remote -v` in a log) would see the PAT.
-                      git remote set-url origin "${DATASET_REPO}"
-
-                      # Inject HF creds into DVC's local config (gitignored, won't leak).
                       dvc remote modify --local hf auth basic
                       dvc remote modify --local hf user api
                       dvc remote modify --local hf password "${HF_TOKEN}"
-
                       dvc pull --quiet
 
                       DATASET_PATH="/tmp/shared/dataset/repo/compiled"
