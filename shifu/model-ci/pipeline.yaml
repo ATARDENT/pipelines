@@ -241,15 +241,13 @@ pipeline:
                       rm -f /tmp/.harness_outputs.env
 
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
-                      pip install --quiet 'dvc' 'dvc-hf'
+                      pip install --quiet dvc
 
-                      # Strip whitespace/newlines that Harness secrets sometimes carry.
+                      # Strip whitespace Harness secrets sometimes carry.
                       DATASET_REPO="$(printf '%s' "${DATASET_REPO}" | tr -d '[:space:]')"
                       DATASET_REF="$(printf '%s'  "${DATASET_REF}"  | tr -d '[:space:]')"
                       GH_TOKEN="$(printf '%s'     "${GH_TOKEN}"     | tr -d '[:space:]')"
                       HF_TOKEN="$(printf '%s'     "${HF_TOKEN}"     | tr -d '[:space:]')"
-
-                      export HUGGING_FACE_HUB_TOKEN="${HF_TOKEN}"
 
                       mkdir -p /tmp/shared/dataset
                       git -c http.extraHeader="Authorization: Bearer ${GH_TOKEN}" \
@@ -259,6 +257,15 @@ pipeline:
                           /tmp/shared/dataset/repo
 
                       cd /tmp/shared/dataset/repo
+
+                      # Inject HF creds into DVC's local config (gitignored, won't leak).
+                      # The remote is named "hf" in the example-dataset's .dvc/config but
+                      # the scheme is plain HTTPS — HF accepts a bearer token via basic auth
+                      # with any username.
+                      dvc remote modify --local hf auth basic
+                      dvc remote modify --local hf user api
+                      dvc remote modify --local hf password "${HF_TOKEN}"
+
                       dvc pull --quiet
 
                       DATASET_PATH="/tmp/shared/dataset/repo/compiled"
