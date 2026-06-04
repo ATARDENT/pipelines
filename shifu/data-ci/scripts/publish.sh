@@ -56,9 +56,9 @@ log "tag.github-branch   = $tag_github_branch"
 # ---------- GitHub App token minting ----------
 #
 # Exchanges the App's private key + installation ID for a short-lived (~1 hour)
-# installation access token. The token is functionally equivalent to a PAT for
-# git operations but is scoped to the App's permissions on the installation
-# and auto-expires. Follows GitHub's official guidance:
+# installation access token. Functionally equivalent to a PAT for git operations
+# but scoped to the App's permissions on the installation and auto-expires.
+# Follows GitHub's official guidance:
 # https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-json-web-token-jwt-for-a-github-app
 mint_github_app_token() {
   : "${GITHUB_APP_CLIENT_ID:?GITHUB_APP_CLIENT_ID is not set}"
@@ -108,7 +108,6 @@ case "$destination" in
   huggingface)
     hf_repo_id="$(read_config output.hf_repo_id "")"
     hf_repo_type="$(read_config remote.huggingface.repo_type dataset)"
-    hf_repo_private="$(read_config remote.huggingface.private false)"
     hf_repo_branch="main"   # HF-side branch; not currently configurable
 
     [[ -n "$hf_repo_id" ]] || die "output.hf_repo_id is empty in configuration.yaml"
@@ -118,8 +117,7 @@ case "$destination" in
       --dataset-dir     "$DATASET_DIR" \
       --hf-repo-id      "$hf_repo_id" \
       --hf-repo-type    "$hf_repo_type" \
-      --hf-repo-branch  "$hf_repo_branch" \
-      --hf-repo-private "$hf_repo_private"
+      --hf-repo-branch  "$hf_repo_branch"
     ;;
 
   gdrive)
@@ -192,8 +190,8 @@ else
 # DVC pointers for ${output_name}
 
 This branch holds DVC pointer files (\`*.dvc\`) for compiled dataset artefacts.
-The actual data lives in a **private** HuggingFace dataset repo, configured
-as a DVC remote in \`.dvc/config\`.
+The actual data lives in a HuggingFace dataset repo, configured as a DVC
+remote in \`.dvc/config\`.
 
 ## To materialise the data locally
 
