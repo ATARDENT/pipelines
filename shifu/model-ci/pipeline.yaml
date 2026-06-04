@@ -86,7 +86,7 @@ pipeline:
                     build:
                       type: tag
                       spec:
-                        tag: v0.3.1
+                        tag: v0.3.2
                     cloneDirectory: /tmp/shared/mlpipe
               - step:
                   identifier: ResetWorkspace
@@ -234,8 +234,10 @@ pipeline:
                     envVariables:
                       DATASET_REPO: <+stages.ValidateCode.spec.execution.steps.ParseManifest.output.outputVariables.dataset_repo>
                       DATASET_REF: <+stages.ValidateCode.spec.execution.steps.ParseManifest.output.outputVariables.dataset_ref>
-                      GH_TOKEN: <+secrets.getValue("github_pat")>
-                      HF_TOKEN: <+secrets.getValue("hf_token")>
+                      GH_CLIENT_ID: <+secrets.getValue("GITHUB_APP_CLIENT_ID")>
+                      GH_APP_INSTALLATION_ID: <+secrets.getValue("GITHUB_APP_INSTALLATION_ID")>
+                      GH_APP_PRIVATE_KEY: <+secrets.getValue("GITHUB_APP_PRIVATE_KEY")>
+                      HF_TOKEN: <+secrets.getValue("HUGGINGFACE_READ_TOKEN")>
                     command: |
                       set -euo pipefail
                       export GIT_TERMINAL_PROMPT=0
