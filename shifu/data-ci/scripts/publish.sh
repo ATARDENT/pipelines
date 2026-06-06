@@ -288,19 +288,24 @@ if [[ "$tag_enabled" == "true" ]]; then
 
   # Tag points at the tip of steps.tag.github-branch (e.g. main),
   # NOT at the DVC pointer commit. Releases mark source-code branches.
+  #
+  # Existence is checked on ORIGIN, not in the local clone: the CI workspace
+  # is a fresh shallow clone every run, so the tag is never present locally —
+  # a local check re-created existing tags and the push died with
+  # "already exists" (and, inversely, a stale local tag from a retried run
+  # would silently skip a push that never happened).
   if ! git ls-remote --exit-code --heads origin "$tag_github_branch" >/dev/null 2>&1; then
     log "WARNING: $tag_github_branch does not exist on origin — skipping tag"
+  elif git ls-remote --exit-code --tags origin "refs/tags/$tag_name" >/dev/null 2>&1; then
+    log "Tag $tag_name already exists on origin — skipping"
   else
     git fetch origin "$tag_github_branch" --depth 1
-    tag_commit="$(git rev-parse "origin/$tag_github_branch")"
+    tag_commit="$(git rev-parse FETCH_HEAD)"
 
-    if git rev-parse "$tag_name" >/dev/null 2>&1; then
-      log "Tag $tag_name already exists — skipping"
-    else
-      git tag -a "$tag_name" "$tag_commit" -m "Dataset $output_name v$version"
-      git push origin "$tag_name"
-      log "Pushed tag $tag_name → $tag_commit ($tag_github_branch)"
-    fi
+    # -f: overwrite a stale local tag left behind by a retried run
+    git tag -fa "$tag_name" "$tag_commit" -m "Dataset $output_name v$version"
+    git push origin "refs/tags/$tag_name"
+    log "Pushed tag $tag_name → $tag_commit ($tag_github_branch)"
   fi
 else
   log "steps.tag.enabled=false — not tagging"
