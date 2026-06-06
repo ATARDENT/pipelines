@@ -6,9 +6,10 @@ What this does end-to-end
 2. `dvc add compiled/<file>` for every file under `compiled/` →
    produces a `.dvc` pointer next to each.
 3. Reads the md5 from each .dvc file and uploads the actual data blob to
-   the Hugging Face dataset repo at `dvc-store/<md5[:2]>/<md5[2:]>`.
-   This layout matches what DVC's HTTP remote expects, so downstream
-   `dvc pull` works.
+   the Hugging Face dataset repo at `dvc-store/files/md5/<md5[:2]>/<md5[2:]>`.
+   This is DVC 3.x's remote object layout (`files/md5/<2>/<rest>`), so the
+   consumer's HTTP remote (base URL `.../dvc-store`) resolves it at
+   `<base>/files/md5/<2>/<rest>` and downstream `dvc pull` works.
 4. Writes `.dvc/config` so the HF dataset repo IS the DVC remote.
 
 The shell wrapper then takes the resulting .dvc files / .dvc/config /
@@ -108,11 +109,15 @@ def upload_to_hf(
     branch: str,
     token: str,
 ) -> str:
-    """Upload `local_file` to HF at dvc-store/<md5[:2]>/<md5[2:]>.
+    """Upload `local_file` to HF at dvc-store/files/md5/<md5[:2]>/<md5[2:]>.
     Returns the HF-side path."""
     from huggingface_hub import HfApi
 
-    hf_path = f"dvc-store/{md5[:2]}/{md5[2:]}"
+    # DVC 3.x remote layout is `files/md5/<2>/<rest>`. The consumer's HTTP
+    # remote points at `.../dvc-store` and DVC appends `files/md5/...`, so the
+    # blob MUST land under dvc-store/files/md5/ or `dvc pull` 404s ("cache
+    # files do not exist ... on remote"). Do not drop the `files/md5/` segment.
+    hf_path = f"dvc-store/files/md5/{md5[:2]}/{md5[2:]}"
     api = HfApi(token=token)
     log(f"Uploading {local_file.name} -> hf://{repo_type}/{repo_id}@{branch}/{hf_path}")
 
