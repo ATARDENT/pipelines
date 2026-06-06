@@ -248,8 +248,14 @@ __pycache__/
 # Cloned pipeline scripts (CI-only)
 pipeline-scripts/
 
-# Compiled data — only DVC pointers should be tracked
+# Compiled data — only DVC pointers should be tracked.
+# `!compiled/**/` re-includes the *directories* so DVC's ignore-aware stage
+# walk can descend into compiled/ and discover the *.dvc pointers. Without it,
+# `compiled/**` prunes the whole subtree: git still tracks the pointers (via the
+# negation below), but `dvc pull` sees "no data tracked in this project",
+# reports "Everything is up to date", and materialises nothing.
 compiled/**
+!compiled/**/
 !compiled/**/*.dvc
 !compiled/**/.gitignore
 
