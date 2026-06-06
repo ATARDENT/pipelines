@@ -160,38 +160,64 @@ fi
 git config user.name  "${GITHUB_APP_COMMITTER_NAME:-shifu-data-ci[bot]}"
 git config user.email "${GITHUB_APP_COMMITTER_EMAIL:-shifu-data-ci[bot]@users.noreply.github.com}"
 
-# Stash DVC artefacts into a tarball before any branch switch, then restore
-# them on top of the target branch. Works whether the target branch exists
-# (we overwrite its DVC config with ours) or doesn't (we create it as an
-# orphan branch with clean history).
-stash="$(mktemp).tar"
-log "Stashing DVC artefacts in $stash"
-artefact_list="$(mktemp)"
-{
-  [[ -d .dvc ]]                && echo .dvc
-  [[ -f .dvcignore ]]          && echo .dvcignore
-  [[ -f compiled/.gitignore ]] && echo compiled/.gitignore
-  find compiled -maxdepth 1 -name '*.dvc' -type f 2>/dev/null || true
-} > "$artefact_list"
-log "Artefacts being stashed:"
-sed 's/^/  /' "$artefact_list"
-tar -cf "$stash" -T "$artefact_list"
+# Build the publish commit in a disposable worktree instead of switching
+# branches in the live workspace. An in-place `git checkout` cannot work here:
+#   - `dvc init` stages an empty .dvc/config and `dvc remote add` then edits
+#     it in the worktree, so the same path tracked on the target branch makes
+#     the checkout abort with "local changes would be overwritten";
+#   - anything ever committed to the target branch that also exists untracked
+#     in the workspace (.venv, compiled pointers) aborts the checkout too;
+#   - even a successful checkout would strip manifest.yaml from the worktree,
+#     breaking the register/notify/trigger steps that run after publish.
+worktree_root="$(mktemp -d)"
+worktree="$worktree_root/publish"
+cleanup_worktree() {
+  git -C "$DATASET_DIR" worktree remove --force "$worktree" >/dev/null 2>&1 || true
+  git -C "$DATASET_DIR" worktree prune >/dev/null 2>&1 || true
+  rm -rf "$worktree_root"
+}
+trap cleanup_worktree EXIT
+git worktree prune >/dev/null 2>&1 || true
 
 if git ls-remote --exit-code --heads origin "$target_branch" >/dev/null 2>&1; then
-  log "Target branch '$target_branch' exists on origin — checking out"
+  log "Target branch '$target_branch' exists on origin — building on top of it"
   git fetch origin "$target_branch" --depth 1
-  git checkout -B "$target_branch" "origin/$target_branch" --
+  dvc_tip="$(git rev-parse FETCH_HEAD)"
+  git worktree add --no-checkout --detach "$worktree" "$dvc_tip"
+  # Start from an empty index: the publish commit contains exactly what is
+  # staged below, so junk that ever lands on the branch (e.g. the .venv an
+  # early version of this script committed) is dropped again on the next
+  # publish. Pointer files from earlier publishes are carried over so a
+  # renamed output doesn't orphan its history.
+  git -C "$worktree" read-tree --empty
+  git -C "$worktree" checkout "$dvc_tip" -- compiled 2>/dev/null || true
 else
   log "Target branch '$target_branch' does not exist — creating orphan branch"
-  git checkout --orphan "$target_branch"
-  # Unstage everything (tracked files); we then explicitly write what we want.
-  git rm -rf --quiet --cached . || true
-  cat > README.md <<EOF
+  git branch -D "$target_branch" >/dev/null 2>&1 || true  # stale leftover from a retried run
+  git worktree add --no-checkout --detach "$worktree"
+  git -C "$worktree" checkout --orphan "$target_branch"
+  # `checkout --orphan` re-populates the index from the previous HEAD on some
+  # git versions — force it empty so nothing from main leaks onto the branch.
+  git -C "$worktree" read-tree --empty
+fi
+
+log "Assembling DVC artefacts in $worktree"
+mkdir -p "$worktree/.dvc" "$worktree/compiled"
+[[ -f .dvcignore ]]          && cp .dvcignore          "$worktree/.dvcignore"
+[[ -f .dvc/config ]]         && cp .dvc/config         "$worktree/.dvc/config"
+[[ -f .dvc/.gitignore ]]     && cp .dvc/.gitignore     "$worktree/.dvc/.gitignore"
+[[ -f compiled/.gitignore ]] && cp compiled/.gitignore "$worktree/compiled/.gitignore"
+compgen -G "compiled/*.dvc" >/dev/null && cp compiled/*.dvc "$worktree/compiled/"
+
+cat > "$worktree/README.md" <<EOF
 # DVC pointers for ${output_name}
 
 This branch holds DVC pointer files (\`*.dvc\`) for compiled dataset artefacts.
 The actual data lives in a HuggingFace dataset repo, configured as a DVC
 remote in \`.dvc/config\`.
+
+This branch is machine-owned: every publish rebuilds it from scratch, so
+manual commits here will be discarded on the next pipeline run.
 
 ## To materialise the data locally
 
@@ -210,16 +236,10 @@ remote in \`.dvc/config\`.
    dvc pull
    \`\`\`
 EOF
-fi
 
-log "Restoring DVC artefacts on top of $target_branch"
-tar -xf "$stash"
-rm -f "$stash" "$artefact_list"
-
-# Write a branch-scoped .gitignore so workspace junk (venv, cloned pipeline
-# scripts, the compiled data file itself) never gets staged — only DVC
-# pointers and DVC's own config are tracked here.
-cat > .gitignore <<'EOF'
+# Branch-scoped .gitignore so junk never gets staged by anyone checking this
+# branch out by hand — only DVC pointers and DVC's own config are tracked.
+cat > "$worktree/.gitignore" <<'EOF'
 # Virtualenvs and Python noise
 .venv/
 __pycache__/
@@ -240,20 +260,23 @@ EOF
 
 # Stage an explicit allowlist rather than `git add -A`, so even if the
 # .gitignore above misses something, junk never lands on this branch.
-git add .gitignore
-[[ -f README.md ]]              && git add README.md
-[[ -f .dvcignore ]]             && git add .dvcignore
-[[ -d .dvc ]]                   && git add .dvc/config .dvc/.gitignore 2>/dev/null || true
-[[ -f compiled/.gitignore ]]    && git add compiled/.gitignore
-compgen -G "compiled/*.dvc" >/dev/null && git add compiled/*.dvc
+(
+  cd "$worktree"
+  git add .gitignore README.md
+  [[ -f .dvcignore ]]          && git add .dvcignore
+  [[ -f .dvc/config ]]         && git add .dvc/config
+  [[ -f .dvc/.gitignore ]]     && git add .dvc/.gitignore
+  [[ -f compiled/.gitignore ]] && git add compiled/.gitignore
+  compgen -G "compiled/*.dvc" >/dev/null && git add compiled/*.dvc
 
-if git diff --cached --quiet; then
-  log "No changes to commit — pointer files already up to date"
-else
-  git commit -m "Publish ${output_name} v${version} via ${destination}"
-  git push origin "$target_branch"
-  log "Pushed DVC pointers to origin/$target_branch"
-fi
+  if git diff --cached --quiet; then
+    log "No changes to commit — pointer files already up to date"
+  else
+    git commit -m "Publish ${output_name} v${version} via ${destination}"
+    git push origin "HEAD:refs/heads/${target_branch}"
+    log "Pushed DVC pointers to origin/$target_branch"
+  fi
+)
 
 # ---------- Tag ----------
 
