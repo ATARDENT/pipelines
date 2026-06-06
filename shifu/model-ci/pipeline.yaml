@@ -274,18 +274,11 @@ pipeline:
                       dvc remote modify --local hf user api
                       dvc remote modify --local hf password "${HF_TOKEN}"
 
-                      # `dvc pull` was silently no-op'ing: "Everything is up to
-                      # date", exit 0, only the *.dvc pointer left behind. DVC only
-                      # does that when it has nothing to fetch for the target — it
-                      # never tried. Surface exactly what DVC sees, then pull from
-                      # the 'hf' remote explicitly (don't assume it's the default)
-                      # with -v so any real failure is loud instead of silent.
-                      echo "── configured remotes ──";     dvc remote list
-                      echo "── default remote ──";         dvc config core.remote || echo "(none set)"
-                      echo "── tracked pointer(s) ──";      cat compiled/*.dvc
-                      echo "── cloud status ──";            dvc status -c -r hf || true
-                      echo "── pulling from 'hf' (verbose) ──"
-                      dvc pull -v -r hf --recursive compiled/
+                      # Pull from the 'hf' remote explicitly — don't depend on it
+                      # being DVC's default remote. The DATA_FILES guard below turns
+                      # a silent no-op pull into a hard failure instead of a green
+                      # stage with no data.
+                      dvc pull -r hf --recursive compiled/
 
                       DATASET_PATH="/tmp/shared/dataset/repo/compiled"
                       if [ ! -d "${DATASET_PATH}" ]; then
