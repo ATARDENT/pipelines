@@ -86,7 +86,7 @@ pipeline:
                     build:
                       type: tag
                       spec:
-                        tag: v0.3.2
+                        tag: v0.3.3
                     cloneDirectory: /tmp/shared/mlpipe
               - step:
                   identifier: ResetWorkspace
@@ -221,7 +221,7 @@ pipeline:
                     build:
                       type: tag
                       spec:
-                        tag: v0.3.2
+                        tag: v0.3.3
                     cloneDirectory: /tmp/shared/mlpipe
               - step:
                   identifier: Step1CloneDataset
