@@ -301,6 +301,13 @@ pipeline:
                       echo "✓ dataset materialised at ${DATASET_PATH} (${DATA_FILES} files)"
                       ls -la "${DATASET_PATH}"
                       echo "dataset_path=${DATASET_PATH}" >> /tmp/.harness_outputs.env
+                      # Re-source so `dataset_path` is an exported shell var when
+                      # Harness appends its `echo "dataset_path $dataset_path"`
+                      # output-harvest line — otherwise `set -u` trips on the
+                      # unbound lowercase var. (Same pattern as the other steps.)
+                      if [ -f /tmp/.harness_outputs.env ]; then
+                        set -a; . /tmp/.harness_outputs.env; set +a
+                      fi
                     outputVariables:
                       - name: dataset_path
               - step:
