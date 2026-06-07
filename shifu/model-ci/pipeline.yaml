@@ -707,6 +707,11 @@ pipeline:
                       set -euo pipefail
                       export GIT_TERMINAL_PROMPT=0
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
+                      # Strip wrapping quotes Harness's <+input>.default("...")
+                      # leaks into the value (same as REPLACE_EXISTING elsewhere)
+                      # — otherwise pip sees them as part of the requirement.
+                      MLPIPE_GIT_URL="${MLPIPE_GIT_URL%\"}"
+                      MLPIPE_GIT_URL="${MLPIPE_GIT_URL#\"}"
                       # mlpipe (public) provides mint_gh_token; [ci] pulls
                       # pyjwt[crypto]+requests. Install from the pinned URL —
                       # the TagVersion stage has no CloneMlpipe step.
