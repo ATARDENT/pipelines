@@ -628,7 +628,7 @@ pipeline:
                       R2_ACCESS_KEY_ID: <+secrets.getValue("R2_ACCESS_KEY")>
                       R2_SECRET_ACCESS_KEY: <+secrets.getValue("R2_SECRET_KEY")>
                       R2_BUCKET: <+secrets.getValue("R2_BUCKET")>
-                      HF_TOKEN: <+secrets.getValue("hf_token")>
+                      HF_TOKEN: <+secrets.getValue("HUGGINGFACE_WRITE_TOKEN")>
                       IDRIVE_KEY: <+secrets.getValue("idrive_access_key")>
                       IDRIVE_SECRET: <+secrets.getValue("idrive_secret_key")>
                       MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
