@@ -688,18 +688,37 @@ pipeline:
                   type: Run
                   spec:
                     connectorRef: dockerhubconnector
-                    image: alpine/git:latest
-                    shell: Sh
+                    image: python:3.11-slim
+                    shell: Bash
                     envVariables:
-                      GH_TOKEN: <+secrets.getValue("github_pat")>
+                      # Mint a GitHub App installation token (same path Step 1
+                      # uses for the dataset repo) instead of a standalone PAT.
+                      GH_CLIENT_ID: <+secrets.getValue("GITHUB_APP_CLIENT_ID")>
+                      GH_APP_INSTALLATION_ID: <+secrets.getValue("GITHUB_APP_INSTALLATION_ID")>
+                      GH_APP_PRIVATE_KEY: <+secrets.getValue("GITHUB_APP_PRIVATE_KEY")>
                       MANIFEST_VERSION: <+stages.ValidateCode.spec.execution.steps.ParseManifest.output.outputVariables.manifest_version>
                       RUN_ID: <+pipeline.variables.trainingRunId>
                       REPO_URL: <+codebase.repoUrl>
                       AUTO_BRANCH: <+stages.ValidateCode.spec.execution.steps.ApplyOverrides.output.outputVariables.auto_branch>
                       AUTO_COMMIT_SHA: <+stages.ValidateCode.spec.execution.steps.ApplyOverrides.output.outputVariables.auto_commit_sha>
                       OVERRIDES_APPLIED: <+stages.ValidateCode.spec.execution.steps.ApplyOverrides.output.outputVariables.overrides_applied>
+                      MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
-                      set -eu
+                      set -euo pipefail
+                      export GIT_TERMINAL_PROMPT=0
+                      apt-get update -qq && apt-get install -y -qq git >/dev/null
+                      # mlpipe (public) provides mint_gh_token; [ci] pulls
+                      # pyjwt[crypto]+requests. Install from the pinned URL —
+                      # the TagVersion stage has no CloneMlpipe step.
+                      pip install --quiet "mlpipe[ci] @ ${MLPIPE_GIT_URL}"
+
+                      GH_TOKEN="$(python -m mlpipe.ci.mint_gh_token)"
+
+                      # Annotated tags need a committer identity; the base image
+                      # has none. Use a bot identity (no real account required).
+                      git config user.email "ml-ci@atardent.noreply"
+                      git config user.name  "mlpipe-ci"
+
                       TAG="model-v${MANIFEST_VERSION}-${RUN_ID}"
                       # In Mode B, tag the auto-branch commit; in Mode A,
                       # tag HEAD (the codebase build the user picked).
@@ -710,7 +729,8 @@ pipeline:
                         TARGET="$(git rev-parse HEAD)"
                         echo "Mode A: tagging HEAD ${TARGET}"
                       fi
-                      AUTHED_URL="$(echo "${REPO_URL}" | sed "s#https://#https://x-access-token:${GH_TOKEN}@#")"
+                      REPO_NO_SCHEME="${REPO_URL#https://}"
+                      AUTHED_URL="https://x-access-token:${GH_TOKEN}@${REPO_NO_SCHEME}"
                       git tag -a "${TAG}" "${TARGET}" -m "Run ${RUN_ID}"
                       git push "${AUTHED_URL}" "${TAG}"
                       echo "✓ tagged ${TAG} → ${TARGET}"
