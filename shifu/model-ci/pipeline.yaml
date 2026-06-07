@@ -611,7 +611,7 @@ pipeline:
                     build:
                       type: tag
                       spec:
-                        tag: v0.3.0
+                        tag: v0.3.7
                     cloneDirectory: /tmp/shared/mlpipe
               - step:
                   identifier: Step8PersistModel
@@ -635,8 +635,11 @@ pipeline:
                     command: |
                       set -euo pipefail
                       pip install --quiet /tmp/shared/mlpipe[ci,r2,hf]
-                      # promote_via_local pulls CHECKPOINT_URI to a temp dir
-                      # then pushes to the manifest.output destination.
+                      # promote_via_local downloads CHECKPOINT_URI to a local dir,
+                      # then uploads it to a destination URI built from the
+                      # manifest's output config (mlpipe >= v0.3.7: real HF store,
+                      # 'huggingface' scheme alias, signature
+                      # (src_store, dst_store, src_uri, dst_uri, local_dir)).
                       python -c "
                       import os, json
                       from mlpipe.storage import get_store, promote_via_local
@@ -644,10 +647,19 @@ pipeline:
                           manifest = json.load(f)
                       dest = manifest['output']['destination']
                       cfg  = manifest['output'].get('config', {}).get(dest, {})
-                      src  = get_store('r2')
-                      dst  = get_store(dest)
-                      uri  = os.environ['CHECKPOINT_URI']
-                      promote_via_local(src, dst, uri, cfg, run_id=os.environ['RUN_ID'])
+                      run_id  = os.environ['RUN_ID']
+                      src_uri = os.environ['CHECKPOINT_URI']
+                      if dest in ('huggingface', 'hf'):
+                          repo = cfg.get('repo_name') or cfg.get('repo_id') or cfg.get('hf_repo_id')
+                          if not repo:
+                              raise SystemExit('manifest output.config.huggingface needs repo_name')
+                          dst_uri = f'hf://{repo}/models/{run_id}'
+                          dst = get_store(dest, private=bool(cfg.get('private', False)))
+                      else:
+                          raise SystemExit(f'Step 8 does not support output.destination {dest!r} yet')
+                      src = get_store('r2')
+                      promote_via_local(src, dst, src_uri, dst_uri, local_dir=f'/tmp/promote/{run_id}')
+                      print(f'promoted {src_uri} -> {dst_uri}')
                       "
     - stage:
         name: TagVersion
