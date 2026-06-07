@@ -397,7 +397,7 @@ pipeline:
                         build:
                           type: tag
                           spec:
-                            tag: v0.3.5
+                            tag: v0.3.6
                         cloneDirectory: /tmp/shared/mlpipe
                   - step:
                       identifier: Step5ResumeCheck
