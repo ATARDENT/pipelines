@@ -57,6 +57,30 @@ pipeline:
         aborts if one already exists (default — protects long-running
         training from being silently killed).
       value: <+input>.default("false").allowedValues("false", "true")
+    - name: colabVariant
+      type: String
+      description: |
+        Colab-only. Runtime variant for training: "cpu" (default — works
+        without Colab Pro) or "gpu" (the account must actually have the
+        chosen accelerator; A100 needs Pro).
+      value: <+input>.default("cpu").allowedValues(cpu, gpu)
+    - name: gpuType
+      type: String
+      description: |
+        Colab-only. Accelerator when colabVariant=gpu (e.g. T4, A100).
+        Ignored when colabVariant=cpu.
+      value: <+input>.default("")
+    - name: highRam
+      type: String
+      description: Colab-only. Request a high-RAM machine shape.
+      value: <+input>.default("false").allowedValues("false", "true")
+    - name: mlpipeGitUrl
+      type: String
+      description: |
+        pip URL the REMOTE training runtime installs mlpipe from
+        (Step 5/6/8 reference it). Keep in lockstep with the
+        CloneMlpipe tag pins.
+      value: <+input>.default("git+https://github.com/ATARDENT/mlpipe.git@v0.3.5")
   stages:
     - stage:
         name: ValidateCode
@@ -373,7 +397,7 @@ pipeline:
                         build:
                           type: tag
                           spec:
-                            tag: v0.3.0
+                            tag: v0.3.5
                         cloneDirectory: /tmp/shared/mlpipe
                   - step:
                       identifier: Step5ResumeCheck
@@ -417,6 +441,9 @@ pipeline:
                           RESUME_FROM: <+steps.Step5ResumeCheck.output.outputVariables.resume_from>
                           RUN_ID: <+pipeline.variables.trainingRunId>
                           REPLACE_EXISTING: <+pipeline.variables.replaceExistingColab>
+                          COLAB_VARIANT: <+pipeline.variables.colabVariant>
+                          COLAB_ACCELERATOR: <+pipeline.variables.gpuType>
+                          HIGH_RAM: <+pipeline.variables.highRam>
                           COLAB_CREDENTIALS_JSON: <+secrets.getValue("COLAB_CREDENTIALS_JSON")>
                           R2_BUCKET: <+secrets.getValue("R2_BUCKET")>
                           R2_ACCOUNT_ID: <+secrets.getValue("R2_ACCOUNT_ID")>
