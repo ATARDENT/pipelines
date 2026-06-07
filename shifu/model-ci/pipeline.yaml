@@ -683,6 +683,18 @@ pipeline:
           execution:
             steps:
               - step:
+                  identifier: CloneMlpipe
+                  name: Clone mlpipe
+                  type: GitClone
+                  spec:
+                    connectorRef: githubconnector
+                    repoName: mlpipe
+                    build:
+                      type: tag
+                      spec:
+                        tag: v0.3.8
+                    cloneDirectory: /tmp/shared/mlpipe
+              - step:
                   identifier: Step9GitTag
                   name: Step 9 - Git Tag
                   type: Run
@@ -702,20 +714,14 @@ pipeline:
                       AUTO_BRANCH: <+stages.ValidateCode.spec.execution.steps.ApplyOverrides.output.outputVariables.auto_branch>
                       AUTO_COMMIT_SHA: <+stages.ValidateCode.spec.execution.steps.ApplyOverrides.output.outputVariables.auto_commit_sha>
                       OVERRIDES_APPLIED: <+stages.ValidateCode.spec.execution.steps.ApplyOverrides.output.outputVariables.overrides_applied>
-                      MLPIPE_GIT_URL: <+pipeline.variables.mlpipeGitUrl>
                     command: |
                       set -euo pipefail
                       export GIT_TERMINAL_PROMPT=0
                       apt-get update -qq && apt-get install -y -qq git >/dev/null
-                      # Strip wrapping quotes Harness's <+input>.default("...")
-                      # leaks into the value (same as REPLACE_EXISTING elsewhere)
-                      # — otherwise pip sees them as part of the requirement.
-                      MLPIPE_GIT_URL="${MLPIPE_GIT_URL%\"}"
-                      MLPIPE_GIT_URL="${MLPIPE_GIT_URL#\"}"
-                      # mlpipe (public) provides mint_gh_token; [ci] pulls
-                      # pyjwt[crypto]+requests. Install from the pinned URL —
-                      # the TagVersion stage has no CloneMlpipe step.
-                      pip install --quiet "mlpipe[ci] @ ${MLPIPE_GIT_URL}"
+                      # mlpipe is PRIVATE — install from the CloneMlpipe checkout
+                      # (authenticated via githubconnector), like every other
+                      # stage. [ci] pulls pyjwt[crypto]+requests for mint_gh_token.
+                      pip install --quiet /tmp/shared/mlpipe[ci]
 
                       GH_TOKEN="$(python -m mlpipe.ci.mint_gh_token)"
 
