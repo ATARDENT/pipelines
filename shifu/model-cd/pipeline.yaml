@@ -352,6 +352,43 @@ pipeline:
                       - name: server_name
                       - name: endpoint_port
                       - name: endpoint_app_module
+              - step:
+                  identifier: TagDeploy
+                  name: Tag Deploy
+                  type: Run
+                  when:
+                    stageStatus: Success
+                    condition: <+steps.ApplyInferenceConfig.output.outputVariables.config_applied> == "true"
+                  spec:
+                    connectorRef: dockerhubconnector
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      GH_CLIENT_ID: <+secrets.getValue("GITHUB_APP_CLIENT_ID")>
+                      GH_APP_INSTALLATION_ID: <+secrets.getValue("GITHUB_APP_INSTALLATION_ID")>
+                      GH_APP_PRIVATE_KEY: <+secrets.getValue("GITHUB_APP_PRIVATE_KEY")>
+                      REPO_URL: <+codebase.repoUrl>
+                      EXECUTION_ID: <+pipeline.executionId>
+                      AUTO_COMMIT_SHA: <+steps.ApplyInferenceConfig.output.outputVariables.auto_commit_sha>
+                    command: |
+                      set -euo pipefail
+                      export GIT_TERMINAL_PROMPT=0
+                      apt-get update -qq && apt-get install -y -qq git >/dev/null
+                      pip install --quiet /tmp/shared/mlpipe[ci]
+                      GH_TOKEN="$(python -m mlpipe.ci.mint_gh_token)"
+                      git config user.email "ml-ci@atardent.noreply"
+                      git config user.name  "mlpipe-ci"
+                      TAG="deploy-${EXECUTION_ID}"
+                      REPO_NO_SCHEME="${REPO_URL#https://}"
+                      AUTHED_URL="https://x-access-token:${GH_TOKEN}@${REPO_NO_SCHEME}"
+                      # Idempotent: skip if the tag already exists on origin.
+                      if git ls-remote --tags "${AUTHED_URL}" "refs/tags/${TAG}" | grep -q "${TAG}"; then
+                        echo "tag ${TAG} already exists on origin — nothing to do."
+                        exit 0
+                      fi
+                      git tag -a "${TAG}" "${AUTO_COMMIT_SHA}" -m "Deploy ${EXECUTION_ID}"
+                      git push "${AUTHED_URL}" "${TAG}"
+                      echo "✓ tagged ${TAG} → ${AUTO_COMMIT_SHA}"
           platform:
             os: Linux
             arch: Amd64
