@@ -118,6 +118,100 @@ pipeline:
                       pytest tests/ --ignore=tests/integration/test_colab_e2e.py -q
                       python main.py --infra simulated
               - step:
+                  identifier: ApplyInferenceConfig
+                  name: Apply Inference Config
+                  type: Run
+                  spec:
+                    connectorRef: dockerhubconnector
+                    image: python:3.11-slim
+                    shell: Bash
+                    envVariables:
+                      INFERENCE_CONFIG_JSON: <+pipeline.variables.inferenceConfigJson>
+                      HARNESS_EXECUTION_ID: <+pipeline.executionId>
+                      REPO_URL: <+codebase.repoUrl>
+                      MODEL_RUN_ID: <+pipeline.variables.modelRunId>
+                      MODEL_SOURCE: <+pipeline.variables.modelSource>
+                      HF_REPO_ID: <+pipeline.variables.hfRepoId>
+                      DEPLOY_TARGET: <+pipeline.variables.deployTarget>
+                      GH_CLIENT_ID: <+secrets.getValue("GITHUB_APP_CLIENT_ID")>
+                      GH_APP_INSTALLATION_ID: <+secrets.getValue("GITHUB_APP_INSTALLATION_ID")>
+                      GH_APP_PRIVATE_KEY: <+secrets.getValue("GITHUB_APP_PRIVATE_KEY")>
+                    command: |
+                      set -euo pipefail
+                      export GIT_TERMINAL_PROMPT=0
+                      rm -f /tmp/.harness_outputs.env
+                      apt-get update -qq && apt-get install -y -qq git >/dev/null
+                      pip install --quiet /tmp/shared/mlpipe[ci]
+
+                      # Strip wrapping quotes Harness's .default("...") leaves embedded.
+                      export INFERENCE_CONFIG_JSON="${INFERENCE_CONFIG_JSON%\"}"
+                      export INFERENCE_CONFIG_JSON="${INFERENCE_CONFIG_JSON#\"}"
+
+                      # Empty / "{}" / Harness "null" literal => no config, no record.
+                      CFG="${INFERENCE_CONFIG_JSON:-}"
+                      [ "$CFG" = "null" ] && CFG=""
+                      CFG_TRIMMED="$(printf '%s' "$CFG" | tr -d '[:space:]')"
+                      if [ -z "$CFG_TRIMMED" ] || [ "$CFG_TRIMMED" = "{}" ]; then
+                        echo "No inference config supplied — serving with defaults."
+                        {
+                          echo "config_applied=false"
+                          echo "inference_config_path="
+                          echo "auto_branch="
+                          echo "auto_commit_sha="
+                        } >> /tmp/.harness_outputs.env
+                        set -a; . /tmp/.harness_outputs.env; set +a
+                        exit 0
+                      fi
+
+                      # Validate JSON and write the recorded artifact (config + metadata).
+                      CONFIG_PATH="$(pwd)/inference_config.json"
+                      python - "$CONFIG_PATH" <<'PY'
+                      import json, os, sys
+                      cfg = json.loads(os.environ["INFERENCE_CONFIG_JSON"])  # aborts on bad JSON
+                      doc = {
+                          "inference": cfg,
+                          "deploy": {
+                              "modelRunId":   os.environ.get("MODEL_RUN_ID", ""),
+                              "modelSource":  os.environ.get("MODEL_SOURCE", ""),
+                              "hfRepoId":     os.environ.get("HF_REPO_ID", ""),
+                              "deployTarget": os.environ.get("DEPLOY_TARGET", ""),
+                              "executionId":  os.environ.get("HARNESS_EXECUTION_ID", ""),
+                          },
+                      }
+                      with open(sys.argv[1], "w") as f:
+                          json.dump(doc, f, indent=2, sort_keys=True)
+                          f.write("\n")
+                      print(f"wrote {sys.argv[1]}")
+                      PY
+
+                      GH_TOKEN="$(python -m mlpipe.ci.mint_gh_token)"
+                      git config user.email "ml-ci@atardent.noreply"
+                      git config user.name  "mlpipe-ci"
+
+                      BRANCH="auto/deploy-${HARNESS_EXECUTION_ID}"
+                      git checkout -b "${BRANCH}"
+                      git add inference_config.json
+                      git commit -m "Inference config for deploy ${HARNESS_EXECUTION_ID}"
+                      COMMIT_SHA="$(git rev-parse HEAD)"
+
+                      REPO_NO_SCHEME="${REPO_URL#https://}"
+                      AUTHED_URL="https://x-access-token:${GH_TOKEN}@${REPO_NO_SCHEME}"
+                      git push "${AUTHED_URL}" "${BRANCH}"
+
+                      {
+                        echo "config_applied=true"
+                        echo "inference_config_path=${CONFIG_PATH}"
+                        echo "auto_branch=${BRANCH}"
+                        echo "auto_commit_sha=${COMMIT_SHA}"
+                      } >> /tmp/.harness_outputs.env
+                      set -a; . /tmp/.harness_outputs.env; set +a
+                      echo "✓ recorded inference config on ${BRANCH} (${COMMIT_SHA})"
+                    outputVariables:
+                      - name: config_applied
+                      - name: inference_config_path
+                      - name: auto_branch
+                      - name: auto_commit_sha
+              - step:
                   identifier: FetchModel
                   name: FetchModel
                   type: Run
