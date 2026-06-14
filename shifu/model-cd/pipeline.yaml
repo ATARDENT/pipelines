@@ -18,6 +18,14 @@ pipeline:
       type: String
       description: run_id of the trained model to deploy (matches models/<run_id>/ in R2).
       value: <+input>
+    - name: inferenceConfigJson
+      type: String
+      description: |
+        Optional. JSON object of inference/generation settings recorded with
+        the deploy and applied to serving. Example:
+            {"max_new_tokens": 512, "temperature": 0.7, "top_p": 0.9}
+        Empty / "{}" → no config recorded, serve with built-in defaults.
+      value: <+input>.default("{}")
     - name: modelSource
       type: String
       description: Where to pull the model from — "r2" (presigned, default) or "hf".
@@ -67,8 +75,22 @@ pipeline:
           cloneCodebase: true
           delegateSelectors:
             - linux-amd64
+          sharedPaths:
+            - /tmp/shared
           execution:
             steps:
+              - step:
+                  identifier: CloneMlpipe
+                  name: Clone mlpipe
+                  type: GitClone
+                  spec:
+                    connectorRef: githubconnector
+                    repoName: mlpipe
+                    build:
+                      type: tag
+                      spec:
+                        tag: v0.3.8
+                    cloneDirectory: /tmp/shared/mlpipe
               - step:
                   identifier: InitAndTest
                   name: InitAndTest
