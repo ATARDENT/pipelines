@@ -7,6 +7,11 @@ pipeline:
     Standalone deploy pipeline. Resolves a trained model by run_id (from R2 via a presigned URL, or from HuggingFace), provisions a runtime through mlrunner, and KEEPS IT ALIVE serving an HTTP endpoint (keep-up: no teardown on success). Single stage so all steps share one workspace (clone + submodule + scripts). deployTarget chooses the backend:
       cpu-ondemand -> ColabBackend, CPU-only, always-available (current default)
       gpu-spheron  -> SpheronBackend: SSH into an already-running Spheron GPU instance
+    Inference config: set inferenceConfigJson (a JSON object of generation
+    settings) to record it on an auto/deploy-<execId> branch, tag the deploy
+    (deploy-<execId>) when the endpoint goes live, and apply it to serving
+    (forwarded to serve_model.py -> serve_bootstrap.py -> the FastAPI app).
+    Empty / "{}" -> serve with built-in defaults, no branch/tag created.
   properties:
     ci:
       codebase:
