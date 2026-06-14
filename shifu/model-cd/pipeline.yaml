@@ -260,6 +260,7 @@ pipeline:
                       HIGH_RAM: <+pipeline.variables.highRam>
                       RUN_ID: <+pipeline.variables.modelRunId>
                       REPLACE_EXISTING: <+pipeline.variables.replaceExisting>
+                      INFERENCE_CONFIG_PATH: <+steps.ApplyInferenceConfig.output.outputVariables.inference_config_path>
                     command: |
                       set -euo pipefail
                       mkdir -p /root/.local/share/colab-cli
@@ -315,6 +316,7 @@ pipeline:
                       SPHERON_HOURLY_RATE: <+pipeline.variables.spheronHourlyRate>
                       SPHERON_KEY_PATH: /root/.ssh/id_ed25519
                       SPHERON_SSH_KEY_B64: <+secrets.getValue("SPHERON_SSH_KEY_B64")>
+                      INFERENCE_CONFIG_PATH: <+steps.ApplyInferenceConfig.output.outputVariables.inference_config_path>
                     command: |
                       set -euo pipefail
                       if [ -z "${SPHERON_HOST:-}" ]; then
